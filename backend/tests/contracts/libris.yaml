@@ -1,0 +1,62 @@
+provider: libris
+contract_source: "https://iller.libris.kb.se/librisfjarrlan/api/doc"
+base_url: "https://iller.libris.kb.se/librisfjarrlan/api"
+interface_change_notice: "Docs warn auth method may change; URL-param api-key to be removed"
+
+auth:
+  scheme: header
+  header_name: "api-key" # NOT Authorization: Bearer
+  scope: organisation # one key covers all sigels in the org
+  url_param_fallback: forbidden # documented as being removed — never use
+
+read:
+  pagination: none # confirmed: envelope has count only, no cursor
+  change_feed: none # confirmed: polling is the only model
+  webhooks: false # confirmed: none exist
+  rate_limit: unknown # NOT unlimited — negotiate (task 1a-6)
+  formats: [ json ] # xml/text/pdf documented as lossy or experimental
+
+views:
+  lending:
+    # incoming = someone asks us
+    incoming: { statuses: [ Uteliggande, Remitterad ] }
+    recent: { statuses: [ Uteliggande, Remitterad, Läst ], window: "5 workdays" }
+    reservations: { statuses: [ Reservation ] }
+    cancellations: { statuses: [ Avbeställd ] }
+  borrowing:
+    # outgoing = we ask someone
+    inbox: { note: "NOT cleared by reading — requires action=read" }
+    may_reserve: {}
+    notfullfilled: {}
+    delivered: { reliability: low } # docs: not all libraries set Levererad
+  archives:
+    incoming_archive: { params: [ start_date, end_date ], filters_on: unknown }
+    outgoing: { params: [ start_date, end_date ], filters_on: unknown }
+  by_id:
+    accepts: [ request_id, lf_number ]
+    note: "status-independent — the only way to follow a known request"
+
+commands:
+  # the complete set. There are no others.
+  read: { params: [ timestamp ], note: "NOT an acceptance" }
+  reserve: { params: [ timestamp, reserve ] }
+  cancel: { params: [ timestamp, cancel ], note: "resolves requester-initiated cancel" }
+  response: { params: [ timestamp, response_id, added_response, may_reserve ] }
+
+unsupported:
+# declare so the domain raises UnsupportedCapability
+- CREATE_REQUEST # no endpoint exists — we never originate orders
+- MARK_SHIPPED
+- MARK_RECEIVED
+- MARK_RETURNED
+
+concurrency:
+  mechanism: "timestamp = last_modified, read-before-write"
+  token_format: "unix epoch as string"
+  on_stale: "rejected by Libris"
+
+writes:
+  content_type: application/x-www-form-urlencoded
+  method: POST # explicitly not PUT
+  reversible: false # Libris has no undo
+  test_environment: unknown # task 1a-7

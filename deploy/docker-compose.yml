@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: ill
+      # Swedish collation: åäö must sort and compare correctly from day one.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=sv_SE.UTF-8"
+    ports: ["5432:5432"]
+
+  redis:
+    image: redis:7
+
+  api:
+    build: ../backend
+    command: uvicorn --factory ill_bridge.api.main:create_app --host 0.0.0.0 --reload
+    environment: &backend_env
+      ILL_LIBRIS_API_KEY: fake-key-not-a-real-credential
+      ILL_LIBRIS_SIGEL: Hal
+      # Points at the simulator, NOT at iller.libris.kb.se
+      ILL_LIBRIS_BASE_URL: http://fake-provider:9000/librisfjarrlan/api
+      ILL_DATABASE_URL: postgresql+psycopg://postgres:dev@db/ill
+      ILL_REDIS_URL: redis://redis:6379/0
+      ILL_ENVIRONMENT: local
+      ILL_API_HOST: 0.0.0.0            # explicit: default is loopback
+    ports: ["8000:8000"]
+    depends_on: [db, redis, fake-provider]
+
+  worker:
+    build: ../backend
+    command: celery -A ill_bridge.jobs.celery_app worker -l info -Q provider,folio
+    environment: *backend_env
+    depends_on: [redis]
+
+  beat:
+    build: ../backend
+    command: celery -A ill_bridge.jobs.celery_app beat -l info
+    environment: *backend_env
+    depends_on: [redis]
+
+  flower:
+    build: ../backend
+    command: celery -A ill_bridge.jobs.celery_app flower --port=5555
+    environment: *backend_env
+    ports: ["127.0.0.1:5555:5555"]     # localhost only: no auth by default
+    depends_on: [redis]
+
+  fake-provider:
+    build: ../backend
+    command: uvicorn ill_bridge.providers.fake.server:app --host 0.0.0.0 --port 9000
+    ports: ["9000:9000"]
+
+  mailhog:
+    image: mailhog/mailhog
+    ports: ["8025:8025"]

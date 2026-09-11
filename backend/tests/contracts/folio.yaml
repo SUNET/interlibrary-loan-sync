@@ -1,0 +1,1 @@
+**Fill the FOLIO manifest** (`docs/folio_manifest.yaml`): release version, gateway type (Okapi vs Keycloak/OIDC), module versions, service-account permissions, ILL location UUIDs, material/loan type UUIDs, service points, notice policy ID, institutional borrower group.

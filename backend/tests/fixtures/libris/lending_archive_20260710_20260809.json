@@ -1,0 +1,10 @@
+{
+  "count": 0,
+  "data_source": "illse",
+  "data_type": "ill_requests",
+  "end_date": "2026-08-09",
+  "ill_requests": [],
+  "library_code": "Hal",
+  "result_type": "incoming_archive",
+  "start_date": "2026-07-10"
+}
