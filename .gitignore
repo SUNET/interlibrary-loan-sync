@@ -1,13 +1,99 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# ==========================================
+# Environment Variables & Secrets (Anywhere)
+# ==========================================
+.env
+.env.*
+**/.env
+**/.env.*
+**/test_config.py
 
-# Virtual environments
+# ==========================================
+# Python Byte-code & Compilation
+# ==========================================
+__pycache__/
+*.py[cod]
+*.py[oc]
+*$py.class
+*.so
+
+# ==========================================
+# Virtual Environments & Packaging
+# ==========================================
+venv/
+env/
+ENV/
+.venv/
 .venv
+__pypackages__/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==========================================
+# Testing & Coverage
+# ==========================================
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ==========================================
+# IDEs, Editors & OS Files
+# ==========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Logs, Databases & Temporary Files
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pip-log.txt
+pip-delete-this-directory.txt
+db.sqlite3
+db.sqlite3-journal
+
+# ==========================================
+# Notebooks & Documentation
+# ==========================================
+.ipynb_checkpoints
+docs/_build/
+
 
 # Captured Libris payloads — contain live patron data. NEVER commit.
 # Only sanitised fixtures (tests/fixtures/libris/*.json) may be committed.
@@ -19,3 +105,10 @@ wheels/
 
 # Belt and braces: any directory named _raw, wherever it appears.
 **/_raw/
+
+
+deploy/mailpit-data/
+ui/admin/inspiration.html
+ui/**/*.html
+ui/librisportal/inspiration.html
+backend/ill_bridge/test_config.py

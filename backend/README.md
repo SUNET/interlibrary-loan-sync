@@ -16,6 +16,7 @@ export ILL_LIBRIS_SIGEL=Hal         # or HALMSTAD_LIBRIS_USERNAME
 uvicorn --factory ill_bridge.api.main:create_app     # not main:app
 uv run python -m ill_bridge.api.main        # dev, :8000 with reload
 secretspec run -- uv run python -m ill_bridge.api.main
+uvicorn ill_bridge.providers.fake.server_faker:app --port 9001 # faker ill api
 ```
 
 ```bash

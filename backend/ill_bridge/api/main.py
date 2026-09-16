@@ -1,14 +1,16 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import random
 from typing import Annotated
-
-from fastapi import Depends, FastAPI, Response, status
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException, Depends, FastAPI, Response, status
+from ill_bridge.jobs.tasks import ping, send_email
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from ill_bridge.api.v1.router import api_router
 from ill_bridge.config import Settings, get_settings
+from ill_bridge.jobs.app import app as procrastinate_app
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +21,14 @@ logger = logging.getLogger(__name__)
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
+from faker import Faker
+fake = Faker("sv_SE")
+seq = 42
+Faker.seed(seq)
+rng = random.Random(seq)
+
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI):
     """
     Manage application lifecycle - startup and shutdown.
     Shutdown order matters: stop producers before closing what they use.
@@ -41,7 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     #   app.state.poller = asyncio.create_task(poll_loop(app.state.libris))
 
     try:
-        yield  # Application runs here
+        # Opens (and later closes) the async connection pool Procrastinate uses
+        # to defer jobs. This is cheap -- deferring a job is just an INSERT.
+        async with procrastinate_app.open_async():
+            yield
     finally:
         # Shutdown: stop the background task first, then close clients.
         #   app.state.poller.cancel()
@@ -80,6 +91,34 @@ def create_app() -> FastAPI:
 
     _register_health_routes(app)
 
+    @app.post("/ping", tags=["test"])
+    async def send_ping():
+
+        task = await ping.defer_async()
+
+        return {
+            "status": "queued",
+            "task_id": task,
+        }
+        
+    @app.post("/webhooks/{source}")
+    async def receive_webhook(source: str, request: Request):
+        """Generic webhook receiver that immediately enqueues processing."""
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(400, "Invalid JSON")
+
+        # Optionally verify signature here (Stripe, GitHub, etc.)
+
+        await send_email.defer_async(
+            to=fake.email(),
+            subject=f"Webhook received from {source}",
+            body=f"Payload: {payload}",
+        )
+        # Return 202 quickly – real work happens in the worker
+        return {"status": "accepted"}, 202
+
     return app
 
 
@@ -89,7 +128,7 @@ def _register_health_routes(app: FastAPI) -> None:
     @app.get("/health/live", tags=["health"])
     async def live() -> dict[str, str]:
         """Liveness: is the process running?"""
-        return {"status": "ok"}
+        return {"status": "ok???"}
 
     @app.get("/health/ready", tags=["health"])
     async def ready(

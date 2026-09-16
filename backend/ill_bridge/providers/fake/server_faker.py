@@ -279,6 +279,11 @@ def generate_request(
     record["local_status"] = LOCAL_STATUS[record["local_status_code"]]
     return record
 
+@app.get("/health")
+async def health() -> dict[str, object]:
+    fixtures = sorted(p.stem for p in FIXTURES.glob("*.json"))
+    return {"status": "ok", "fixtures": len(fixtures), "fixture_dir": str(FIXTURES)}
+
 
 @app.get("/librisfjarrlan/api/illrequests/{sigel}/{view}")
 async def ill_requests(
@@ -378,11 +383,6 @@ async def libraries(
         "libraries", sigel, [], data_type="libraries"
     )
 
-
-@app.get("/health")
-async def health() -> dict[str, object]:
-    fixtures = sorted(p.stem for p in FIXTURES.glob("*.json"))
-    return {"status": "ok", "fixtures": len(fixtures), "fixture_dir": str(FIXTURES)}
 
 
 if __name__ == "__main__":

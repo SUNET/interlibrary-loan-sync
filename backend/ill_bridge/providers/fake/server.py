@@ -16,6 +16,10 @@ def _load(name: str) -> dict:
                 "result_type": name, "count": 0, "ill_requests": []}
     return json.loads(path.read_text(encoding="utf-8"))
 
+@app.get("/health")
+async def health() -> dict[str, object]:
+    fixtures = sorted(p.stem for p in FIXTURES.glob("*.json"))
+    return {"status": "ok", "fixtures": len(fixtures), "fixture_dir": str(FIXTURES)}
 
 @app.get("/librisfjarrlan/api/illrequests/{sigel}/{view}")
 async def ill_requests(sigel: str, view: str, api_key: str = Header(alias="api-key")):
@@ -27,4 +31,4 @@ async def ill_requests(sigel: str, view: str, api_key: str = Header(alias="api-k
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    uvicorn.run(app, host="127.0.0.1", port=9001)

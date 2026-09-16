@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     database_url: str | None = None
     redis_url: str | None = None
+    
+    # --- SMTP ---------------------------------------------------------
+    smtp_host: str = "mailpit"
+    smtp_port: int = 1025
 
     # --- Environment -----------------------------------------------------
     environment: Environment = "local"
