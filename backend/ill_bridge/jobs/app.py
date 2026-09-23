@@ -1,7 +1,7 @@
 from procrastinate import App, PsycopgConnector
 from ill_bridge.config import get_settings
 
-settings = get_settings()
+settings = get_settings(strict_env=False)  # fail fast on missing env vars, .env, or .toml
 
 app = App(
     connector=PsycopgConnector(

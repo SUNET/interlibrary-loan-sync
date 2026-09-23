@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+from uuid import UUID, uuid4
+
+from ill_bridge.common.enums import ILLDirection, RequestType
+from ill_bridge.common.states import WorkflowState
+from pydantic import BaseModel, ConfigDict, Field
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderRequests:
+    feed: str
+    count: int
+    requests: tuple[dict[str, Any], ...]
+
+
+class PatronReference(BaseModel):
+    """A local patron identifier (before resolution against FOLIO), pre-resolution."""
+
+    model_config = ConfigDict(strict=True)
+
+    type: str  # "BARCODE" | "FOLIO_USER_ID" | "LIBRARY_CARD"
+    value: str
+    # Set once resolved against FOLIO in Part 6; None means unmatched.
+    folio_user_id: str | None = None
+
+
+class Library(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    scheme: str = "SIGEL"
+    value: str  # e.g. "Hal"
+    display_name: str | None = None
+
+
+class Bibliographic(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    authors: list[str] = Field(default_factory=list)
+    title: str | None = None
+    container_title: str | None = None
+    article_title: str | None = None
+    publication_year: str | None = None
+    volume: str | None = None
+    issue: str | None = None
+    pages: str | None = None
+    identifiers: list[dict[str, str]] = Field(default_factory=list)
+
+
+class ProviderRequestObservation(BaseModel):
+    """
+    An observation describes what the provider returned at a specific instant
+    for one request from the providerRequests feed.
+    not the actions taken in response.
+    The decision is based on `states.transition()`.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    schema_version: int = 1
+
+    # Staff-facing identifier. For Libris this is `lf_number`; `request_id`
+    external_request_id: str
+    provider_record_id: str | None = None
+
+    direction: ILLDirection
+    request_type: RequestType
+
+    requesting_library: Library
+    active_lending_library: Library | None = None
+
+    bibliographic: Bibliographic
+    patron_reference: PatronReference | None = None
+
+    # Raw provider status is ALWAYS preserved next to the mapped state.
+    provider_status_raw: str | None = None
+    provider_status_code: str | None = None
+
+    # Opaque revision token for optimistic concurrency.
+    # Libris=`last_modified`, a Unix-epoch STRING.
+    provider_revision: str | None = None
+
+    observed_at: datetime
+
+    # Provider fields we do not model yet.
+    extensions: dict[str, Any] = Field(default_factory=dict)
+
+    # The state `provider_status_code` maps to under the active mapping
+    # profile, and whether that mapping is VERIFIED against real traffic.
+    mapped_state: WorkflowState | None = None
+    mapping_confident: bool = False
+
+    # Identifies the exact upstream revision this observation came from,
+    # `lf_number:last_modified`. Used for dedup and echo suppression.
+    event_key: str
+    correlation_id: UUID = Field(default_factory=uuid4)
+
+    @property
+    def needs_review(self) -> bool:
+        return self.mapped_state is None or not self.mapping_confident

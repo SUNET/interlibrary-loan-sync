@@ -6,9 +6,8 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from faker import Faker
 
-from ill_bridge.jobs.app import app as procrastinate_app
+from ill_bridge.jobs.worker import app as procrastinate_app
 from ill_bridge.jobs.tasks import (
-    dispatch_due_work,
     ping,
     poll_provider,
     send_email,
@@ -22,12 +21,6 @@ rng = random.Random(seq)
 
 async def enqueue_poll_provider():
     await poll_provider.defer_async(cursor_row_id="provider-main")
-
-
-async def enqueue_dispatch_due_work():
-    # Prefer a real wall-clock timestamp if the task expects one
-    timestamp = int(asyncio.get_running_loop().time())
-    await dispatch_due_work.defer_async(timestamp=timestamp)
 
 
 async def enqueue_ping():
@@ -63,20 +56,6 @@ async def main() -> None:
             id="send-email",
             replace_existing=True,
         )
-
-        # Optional:
-        # scheduler.add_job(
-        #     enqueue_poll_provider,
-        #     IntervalTrigger(seconds=30),
-        #     id="poll-provider",
-        #     replace_existing=True,
-        # )
-        # scheduler.add_job(
-        #     enqueue_dispatch_due_work,
-        #     IntervalTrigger(minutes=5),
-        #     id="dispatch-due-work",
-        #     replace_existing=True,
-        # )
 
         scheduler.start()
         print("Scheduler started. Press Ctrl+C to exit.")

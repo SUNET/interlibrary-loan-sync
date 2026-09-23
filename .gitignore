@@ -112,3 +112,6 @@ ui/admin/inspiration.html
 ui/**/*.html
 ui/librisportal/inspiration.html
 backend/ill_bridge/test_config.py
+ui/*
+ui
+

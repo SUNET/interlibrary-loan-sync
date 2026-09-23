@@ -10,10 +10,13 @@ from typing import Any
 
 from fastapi import APIRouter
 
-# from ill_bridge.api.v1.filters.router import router as filters_router
-# api_router.include_router(filters_router)
+from ill_bridge.api.v1.admin.router import router as admin_router
+from ill_bridge.api.v1.libris.router import router as libris_router
 
 api_router = APIRouter()
+
+api_router.include_router(admin_router)
+api_router.include_router(libris_router)
 
 
 # Paths are relative to the prefix applied in create_app() ("/api/v1").
