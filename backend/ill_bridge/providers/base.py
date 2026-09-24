@@ -1,13 +1,19 @@
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
-from ill_bridge.common.models import ProviderRequestObservation, ProviderRequests
+from ill_bridge.common.models import (
+    ProviderCapabilities,
+    ProviderRequestObservation,
+    ProviderRequests,
+)
 
 
-class ILLProvider(Protocol):
+class IllProvider(Protocol):
     sigel: str
     writes_enabled: bool
     feeds: tuple[str, ...]
+    capabilities: ProviderCapabilities
 
     @property
     def is_writable(self) -> bool:

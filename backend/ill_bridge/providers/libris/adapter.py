@@ -1,12 +1,29 @@
 from typing import ClassVar
 
 from ill_bridge.common.api import AsyncApiClient
-from ill_bridge.common.enums import LibrisFeed
-from ill_bridge.common.models import ProviderRequestObservation, ProviderRequests
+from ill_bridge.common.enums import (
+    ILLDirection,
+    LibrisFeed,
+    ProviderCommand,
+    RequestType,
+)
+from ill_bridge.common.models import (
+    ProviderCapabilities,
+    ProviderRequestObservation,
+    ProviderRequests,
+)
 
 
 class LibrisAdapter:
     feeds: ClassVar[tuple[str, ...]] = tuple(feed.value for feed in LibrisFeed)
+    capabilities: ClassVar = ProviderCapabilities(
+        directions=frozenset({ILLDirection.BORROWING, ILLDirection.LENDING}),
+        request_types=frozenset({RequestType.LOAN, RequestType.COPY}),
+        commands=frozenset({ProviderCommand.PROVIDER_ACCEPT, ProviderCommand.PROVIDER_REJECT, ProviderCommand.PROVIDER_CANCEL}),
+        supports_webhooks=False,
+        supports_cursors=False,
+        native_idempotency=False,
+    )
 
     def __init__(self, *, sigel, base_url, api_key, mapping, writes_enabled):
         self.sigel = sigel
@@ -24,9 +41,7 @@ class LibrisAdapter:
         return self.writes_enabled
 
     async def fetch_requests(self, *, feed: str) -> ProviderRequests:
-        r = await self._http.get(f"/illrequests/{self.sigel}/{feed}")
-        r.raise_for_status()
-        payload = r.json()
+        payload: dict = await self._http.get(f"/illrequests/{self.sigel}/{feed}")
         return ProviderRequests(
             feed=feed,
             count=int(payload.get("count", 0)),

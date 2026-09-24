@@ -48,7 +48,7 @@ class AsyncApiClient:
         return uri.lstrip("/")
 
     @staticmethod
-    def _body(response: httpx2.Response, uri: str) -> Any:
+    def _body(response: httpx2.Response, uri: str) -> dict[str, Any]:
         if not response.content:
             return {"status": "deleted", "uri": uri}
         try:
@@ -61,22 +61,22 @@ class AsyncApiClient:
         uri: str,
         *,
         params: Mapping[str, str | int | float | bool | None] | None = None,
-    ) -> Any:
+    ) -> dict[str, Any]:
         response = await self.session.get(self._path(uri), params=params)
         response.raise_for_status()
         return self._body(response, uri)
 
-    async def post(self, uri: str, payload: Any) -> Any:
+    async def post(self, uri: str, payload: Any) -> dict[str, Any]:
         response = await self.session.post(self._path(uri), json=payload)
         response.raise_for_status()
         return self._body(response, uri)
 
-    async def put(self, uri: str, payload: Any) -> Any:
+    async def put(self, uri: str, payload: Any) -> dict[str, Any]:
         response = await self.session.put(self._path(uri), json=payload)
         response.raise_for_status()
         return self._body(response, uri)
 
-    async def delete(self, uri: str) -> Any:
+    async def delete(self, uri: str) -> dict[str, Any]:
         response = await self.session.delete(self._path(uri))
         response.raise_for_status()
         return self._body(response, uri)

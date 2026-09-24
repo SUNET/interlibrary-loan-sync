@@ -25,11 +25,37 @@ services:
       ILL_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       ILL_ENVIRONMENT: ${ILL_ENVIRONMENT:-local}
       ILL_API_HOST: 0.0.0.0 # explicit: default is loopback
+      # Pyway migration settings
+      PYWAY_TYPE: postgres
+      PYWAY_DATABASE_HOST: db
+      PYWAY_DATABASE_PORT: 5432
+      PYWAY_DATABASE_NAME: ${POSTGRES_DB:-ill}
+      PYWAY_DATABASE_USERNAME: ${POSTGRES_USER:-admin}
+      PYWAY_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      PYWAY_DATABASE_MIGRATION_DIR: /app/migrations
+      PYWAY_TABLE: public.pyway
     volumes:
       # Bind to see changes directly
       - ../backend/ill_bridge:/app/ill_bridge
     depends_on:
       db: { condition: service_healthy }
+
+  # TODO: add pyway migration service to docker-compose-dev.yml,
+  # migrate:
+  #   build: .
+  #   command: pyway migrate
+  #   environment:
+  #     PYWAY_TYPE: postgres
+  #     PYWAY_DATABASE_HOST: db
+  #     PYWAY_DATABASE_PORT: 5432
+  #     PYWAY_DATABASE_NAME: myapp
+  #     PYWAY_DATABASE_USERNAME: myapp
+  #     PYWAY_DATABASE_PASSWORD: myapp
+  #     PYWAY_DATABASE_MIGRATION_DIR: /app/migrations
+  #     PYWAY_TABLE: public.pyway
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
 
   api:
     build: ../backend

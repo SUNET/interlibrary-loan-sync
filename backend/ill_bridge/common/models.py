@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pprint import pformat
 from typing import Any
 from uuid import UUID, uuid4
 
-from ill_bridge.common.enums import ILLDirection, RequestType
+from ill_bridge.common.enums import ILLDirection, RequestType, ProviderCommand
 from ill_bridge.common.states import WorkflowState
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,6 +17,15 @@ class ProviderRequests:
     count: int
     requests: tuple[dict[str, Any], ...]
 
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    directions: frozenset[ILLDirection]
+    request_types: frozenset[RequestType]
+    commands: frozenset[ProviderCommand]
+    supports_webhooks: bool = False
+    supports_cursors: bool = False        # Libris: no cursor, no pagination
+    native_idempotency: bool = False
 
 class PatronReference(BaseModel):
     """A local patron identifier (before resolution against FOLIO), pre-resolution."""
@@ -101,3 +111,27 @@ class ProviderRequestObservation(BaseModel):
     @property
     def needs_review(self) -> bool:
         return self.mapped_state is None or not self.mapping_confident
+
+    def __repr_str__(self, join_str: str) -> str:
+        fields = ",\n    ".join(
+            f"{name}={pformat(value, width=100, sort_dicts=False)}"
+            for name, value in self.__repr_args__()
+        )
+        return f"\n    {fields}\n"
+    
+    def short_repr(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"external_request_id={self.external_request_id!r}, "
+            f"request_type={self.request_type.value!r}, "
+            f"provider_status_raw={self.provider_status_raw!r}, "
+            f"direction={self.direction.value!r}, "
+            f"mapped_state={self.mapped_state.value if self.mapped_state else None!r}"
+            ")"
+        )
+    
+    def __repr__(self):
+        return super().__repr__()
+
+    def __str__(self) -> str:
+        return self.short_repr()

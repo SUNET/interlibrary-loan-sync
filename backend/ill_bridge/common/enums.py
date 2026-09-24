@@ -3,6 +3,11 @@ from __future__ import annotations
 from enum import StrEnum
 
 
+class ProviderCommand(StrEnum):
+    PROVIDER_ACCEPT = "PROVIDER_ACCEPT"
+    PROVIDER_REJECT = "PROVIDER_REJECT"
+    PROVIDER_CANCEL = "PROVIDER_CANCEL"
+
 class EvidenceSource(StrEnum):
     PROVIDER = "PROVIDER"  # Libris said so
     FOLIO_CIRCULATION = "FOLIO_CIRCULATION"  # a real circulation event

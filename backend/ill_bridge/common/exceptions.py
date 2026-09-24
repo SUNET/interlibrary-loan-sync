@@ -52,3 +52,10 @@ class MappingProfileNotFound(LookupError):
     def __init__(self, version: str):
         super().__init__(f"Mapping profile not found for version: {version}")
         self.version = version
+
+class StaleVersionError(RuntimeError):
+    """Raised when an operation is attempted on a stale version of a record."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message

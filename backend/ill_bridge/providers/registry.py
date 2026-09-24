@@ -5,7 +5,7 @@ from ill_bridge.common.enums import AdapterKeyType
 from ill_bridge.common.exceptions import UnknownAdapter
 from ill_bridge.common.secrets import SecretResolverPassbolt
 from ill_bridge.database.models import Providers
-from ill_bridge.providers.base import ILLProvider
+from ill_bridge.providers.base import IllProvider
 
 # from ill_bridge.providers.fake.adapter import FakeAdapter
 from ill_bridge.providers.libris.adapter import LibrisAdapter
@@ -15,7 +15,7 @@ from ill_bridge.providers.loader import MappingLoader
 @dataclass(frozen=True, slots=True)
 class AdapterSpec:
     key: str
-    adapter: type[ILLProvider]
+    adapter: type[IllProvider]
     feeds: tuple[str, ...]
 
 
@@ -52,7 +52,7 @@ class ProviderRegistry:
     def feeds_for(self, adapter_key: str) -> tuple[str, ...]:
         return self.spec_for(adapter_key).feeds
 
-    def create(self, row: Providers) -> ILLProvider:
+    def create(self, row: Providers) -> IllProvider:
         spec = self.spec_for(row.adapter_key)
 
         return spec.adapter(

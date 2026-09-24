@@ -269,7 +269,7 @@ class LibrisMappingProfile:
         )
 
         return ProviderRequestObservation(
-            schema_version=self.SCHEMA_VERSION,
+            schema_version=self.schema_version,
             external_request_id=lf_number,
             provider_record_id=provider_record_id,
             direction=direction,
