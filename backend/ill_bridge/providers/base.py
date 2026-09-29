@@ -13,6 +13,8 @@ class IllProvider(Protocol):
     sigel: str
     writes_enabled: bool
     feeds: tuple[str, ...]
+    lending_feeds: tuple[str, ...]
+    borrowing_feeds: tuple[str, ...]
     capabilities: ProviderCapabilities
 
     @property

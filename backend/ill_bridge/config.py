@@ -1,19 +1,48 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from functools import lru_cache
+from types import MappingProxyType
 from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ill_bridge import __version__
+from ill_bridge.common.exceptions import FolioTenantConfigNotFoundError
+from ill_bridge.common.models import FolioPatronGroup
 
 Environment = Literal["local", "test", "staging", "production"]
 AuthMode = Literal["oidc", "mock"]
 
 
 LIBRIS_BASE_URL = "https://iller.libris.kb.se/librisfjarrlan/api"
+
+
+FOLIO_TENANT_PATRON_GROUPS: Mapping[str, FolioPatronGroup] = MappingProxyType(
+    {
+        "bth": FolioPatronGroup(
+            name="Bibliotek", uuid="f3e0c1d5-4b6a-4e2f-9c8b-1a2b3c4d5e6f"
+        ),
+        "mdu": FolioPatronGroup(
+            name="Andra Bibliotek", uuid="a1b2c3d4-5e6f-7g8h-9i0j-1a2b3c4d5e6f"
+        ),
+        "hh": FolioPatronGroup(
+            name="Bibliotek", uuid="b1c2d3e4-5f6g-7h8i-9j0k-1b2c3d4e5f6g"
+        ),
+    }
+)
+
+
+def get_folio_tenant_config(folio_tenant_key: str) -> FolioPatronGroup:
+    key = folio_tenant_key.strip().lower()
+    try:
+        return FOLIO_TENANT_PATRON_GROUPS[key]
+    except KeyError as exc:
+        raise FolioTenantConfigNotFoundError(
+            f"No FOLIO configuration exists for tenant {folio_tenant_key!r}"
+        ) from exc
 
 
 class Settings(BaseSettings):
@@ -56,7 +85,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     database_url: str | None = None
     redis_url: str | None = None
-    
+
     # --- SMTP ---------------------------------------------------------
     smtp_host: str = "mailpit"
     smtp_port: int = 1025
@@ -112,7 +141,9 @@ class Settings(BaseSettings):
 
         # The API is served with allow_credentials=True, and browsers reject
         # a wildcard origin in that combination.
-        self.cors_origins = [origin.strip() for origin in self.cors_origins if origin.strip()]
+        self.cors_origins = [
+            origin.strip() for origin in self.cors_origins if origin.strip()
+        ]
         if "*" in self.cors_origins:
             raise ValueError(
                 'cors_origins cannot contain "*" because credentials are '

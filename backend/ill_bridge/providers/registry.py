@@ -1,10 +1,10 @@
 # ill_bridge/providers/registry.py
 from dataclasses import dataclass
 
-from ill_bridge.common.enums import AdapterKeyType
+from ill_bridge.common.enums import AdapterKeyType, ILLDirection
 from ill_bridge.common.exceptions import UnknownAdapter
 from ill_bridge.common.secrets import SecretResolverPassbolt
-from ill_bridge.database.models import Providers
+from ill_bridge.database.models import Providers as ProviderDbModel
 from ill_bridge.providers.base import IllProvider
 
 # from ill_bridge.providers.fake.adapter import FakeAdapter
@@ -49,10 +49,16 @@ class ProviderRegistry:
         except KeyError:
             raise UnknownAdapter(adapter_key)
 
-    def feeds_for(self, adapter_key: str) -> tuple[str, ...]:
-        return self.spec_for(adapter_key).feeds
+    def feeds_for(self, adapter_key: str, direction: ILLDirection) -> tuple[str, ...]:
+        spec = self.spec_for(adapter_key)
+        if direction == ILLDirection.LENDING:
+            return spec.adapter.lending_feeds
+        elif direction == ILLDirection.BORROWING:
+            return spec.adapter.borrowing_feeds
+        else:
+            return spec.feeds
 
-    def create(self, row: Providers) -> IllProvider:
+    def create(self, row: ProviderDbModel) -> IllProvider:
         spec = self.spec_for(row.adapter_key)
 
         return spec.adapter(

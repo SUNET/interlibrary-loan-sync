@@ -16,6 +16,8 @@ from ill_bridge.common.models import (
 
 class LibrisAdapter:
     feeds: ClassVar[tuple[str, ...]] = tuple(feed.value for feed in LibrisFeed)
+    lending_feeds: ClassVar[tuple[str, ...]] = tuple(feed.value for feed in LibrisFeed.lending())
+    borrowing_feeds: ClassVar[tuple[str, ...]] = tuple(feed.value for feed in LibrisFeed.borrowing())
     capabilities: ClassVar = ProviderCapabilities(
         directions=frozenset({ILLDirection.BORROWING, ILLDirection.LENDING}),
         request_types=frozenset({RequestType.LOAN, RequestType.COPY}),

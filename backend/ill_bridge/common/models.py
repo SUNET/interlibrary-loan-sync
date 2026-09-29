@@ -12,6 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 @dataclass(frozen=True, slots=True)
+class FolioPatronGroup:
+    name: str
+    uuid: str | None = None
+
+@dataclass(frozen=True, slots=True)
 class ProviderRequests:
     feed: str
     count: int
