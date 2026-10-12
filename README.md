@@ -15,6 +15,15 @@ It ingests ILL transactions from Libris, verifies patrons against FOLIO, provisi
 
 Start with [`backend/README.md`](backend/README.md).
 
+```bash
+Usage
+# Docker
+docker compose -f docker-compose-dev.yml up migrate
+# Locally (as before, or both steps via the same script)
+secretspec run -- uv run pyway migrate
+secretspec run -- uv run python -m ill_bridge.jobs.migrate
+```
+
 ## Two directions
 
 **Inlån (borrowing)** — a local patron needs material held elsewhere. The request arrives from Libris, the patron is verified against `mod-users`, a temporary item and circulation request are created, and FOLIO's own notice policy tells the patron when it arrives.

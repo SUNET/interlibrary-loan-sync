@@ -8,24 +8,34 @@ write them to ``effect_queue`` without re-deriving intent in a later worker.
 from __future__ import annotations
 
 from enum import StrEnum
+
 from ill_bridge.common.enums import ILLDirection, ProviderCommand
-from ill_bridge.common.models import ProviderRequestObservation
+from ill_bridge.common.models import ProviderRequestObservation, ReceivingLibrary
 from ill_bridge.common.states import ProcessingState, WorkflowState
+from ill_bridge.database.models import Tenants
 from ill_bridge.providers.base import IllProvider
 
 
 class EffectKind(StrEnum):
+    FOLIO_ADD_REQUESTING_LIBRARY = "FOLIO_ADD_REQUESTING_LIBRARY"
     FOLIO_PROVISION_ITEM = "FOLIO_PROVISION_ITEM"
     FOLIO_OPEN_LOAN = "FOLIO_OPEN_LOAN"
     FOLIO_CLOSE_LOAN = "FOLIO_CLOSE_LOAN"
+    FOLIO_RENEW_LOAN = "FOLIO_RENEW_LOAN"
     NOTIFY_PATRON_PICKUP = "NOTIFY_PATRON_PICKUP"
     PROVIDER_ACCEPT = "PROVIDER_ACCEPT"
     PROVIDER_REJECT = "PROVIDER_REJECT"
     PROVIDER_CANCEL = "PROVIDER_CANCEL"
+    PROVIDER_REVIEW_NEW_REQUEST = "PROVIDER_REVIEW_NEW_REQUEST"
 
 
 _PROVIDER_EFFECTS = frozenset(
-    {EffectKind.PROVIDER_ACCEPT, EffectKind.PROVIDER_REJECT, EffectKind.PROVIDER_CANCEL}
+    {
+        EffectKind.PROVIDER_ACCEPT,
+        EffectKind.PROVIDER_REJECT,
+        EffectKind.PROVIDER_CANCEL,
+        EffectKind.PROVIDER_REVIEW_NEW_REQUEST,
+    }
 )
 
 _PLAN: dict[
@@ -43,14 +53,46 @@ _PLAN: dict[
     (ILLDirection.BORROWING, WorkflowState.ON_LOAN, WorkflowState.RETURN_PENDING): (
         EffectKind.FOLIO_CLOSE_LOAN,
     ),
-    (ILLDirection.LENDING, WorkflowState.REQUESTED, WorkflowState.ACCEPTED): (
-        EffectKind.PROVIDER_ACCEPT,
-    ),
     (ILLDirection.LENDING, WorkflowState.REQUESTED, WorkflowState.REJECTED): (
         EffectKind.PROVIDER_REJECT,
     ),
+    (ILLDirection.LENDING, WorkflowState.REQUESTED, WorkflowState.ACCEPTED): (
+        EffectKind.PROVIDER_ACCEPT,
+    ),
+    # (ILLDirection.LENDING, None, WorkflowState.CANCELLED): (
+    #     EffectKind.PROVIDER_CANCEL,
+    #     EffectKind.FOLIO_CLOSE_LOAN
+    # ),
+    (ILLDirection.LENDING, WorkflowState.ACCEPTED, WorkflowState.CANCELLED): (
+        EffectKind.PROVIDER_CANCEL,
+        EffectKind.FOLIO_CLOSE_LOAN,
+    ),
+    (ILLDirection.LENDING, WorkflowState.REQUESTED, WorkflowState.CANCELLED): (
+        EffectKind.PROVIDER_CANCEL,
+        EffectKind.FOLIO_CLOSE_LOAN,
+    ),
     (ILLDirection.LENDING, WorkflowState.ACCEPTED, WorkflowState.ON_LOAN): (
         EffectKind.FOLIO_OPEN_LOAN,
+    ),
+    (ILLDirection.LENDING, None, WorkflowState.REQUESTED): (
+        EffectKind.FOLIO_ADD_REQUESTING_LIBRARY,
+        EffectKind.PROVIDER_REVIEW_NEW_REQUEST,
+    ),
+    # --- Lending lifecycle (see common/transitions.py) ---
+    # ARRIVED is observational only; it does not queue external effects.
+    (ILLDirection.LENDING, WorkflowState.RESERVED, WorkflowState.IN_TRANSIT): (
+        EffectKind.FOLIO_OPEN_LOAN,
+    ),
+    (ILLDirection.LENDING, WorkflowState.ACCEPTED, WorkflowState.IN_TRANSIT): (
+        EffectKind.FOLIO_OPEN_LOAN,
+    ),
+    # Requesting library asked for a renewal: extend the FOLIO loan.
+    (ILLDirection.LENDING, WorkflowState.RECEIVED, WorkflowState.RENEWAL_REQUESTED): (
+        EffectKind.FOLIO_RENEW_LOAN,
+    ),
+    # Item is back at our library: check it in in FOLIO.
+    (ILLDirection.LENDING, WorkflowState.RETURN_IN_TRANSIT, WorkflowState.RETURNED): (
+        EffectKind.FOLIO_CLOSE_LOAN,
     ),
 }
 
@@ -83,11 +125,46 @@ def plan_effects(
             effect_kind is EffectKind.FOLIO_PROVISION_ITEM
             and observation.patron_reference is None
         ):
+            print("CASE 1: No patron reference, skipping FOLIO_PROVISION_ITEM effect.")
             continue
         if effect_kind in _PROVIDER_EFFECTS:
             command = ProviderCommand(effect_kind.value)
-            if not provider.writes_enabled or command not in provider.capabilities.commands:
+            print(
+                f"Checking if provider supports command {command} for effect {effect_kind}."
+            )
+            if (
+                not provider.writes_enabled
+                or command not in provider.capabilities.commands
+            ):
+                print(
+                    f"CASE 2: Provider writes disabled or command {command} not supported, skipping {effect_kind} effect."
+                )
                 continue
         effects.append(effect_kind)
 
     return tuple(effects)
+
+
+async def apply_effects(
+    effects, observation: ProviderRequestObservation, folio_client, tenant: Tenants
+):
+    from ill_bridge.common.folio_client import (
+        create_folio_requesting_library,
+    )
+    from ill_bridge.config import FOLIO_TENANT_PATRON_GROUPS
+
+    receiving_library: ReceivingLibrary = observation.receiving_library
+    for effect in effects:
+        if effect == EffectKind.FOLIO_ADD_REQUESTING_LIBRARY:
+            patron_group = FOLIO_TENANT_PATRON_GROUPS[tenant.folio_tenant_key]
+            patron_group_id = patron_group.uuid
+
+            response = await create_folio_requesting_library(
+                client=folio_client,
+                receiving_library=receiving_library,
+                patron_group_id=patron_group_id,
+            )
+            return response
+        elif effect == EffectKind.FOLIO_PROVISION_ITEM:
+            # Implement logic to provision item in FOLIO
+            pass

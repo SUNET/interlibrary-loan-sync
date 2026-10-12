@@ -49,8 +49,14 @@ class ProviderRegistry:
         except KeyError:
             raise UnknownAdapter(adapter_key)
 
-    def feeds_for(self, adapter_key: str, direction: ILLDirection) -> tuple[str, ...]:
+    def feeds_for(
+        self, adapter_key: str, direction: ILLDirection, from_archive=False, days: int = 30
+    ) -> tuple[str, ...]:
         spec = self.spec_for(adapter_key)
+
+        if from_archive:
+            return spec.adapter.archive(direction=direction, days=days)
+
         if direction == ILLDirection.LENDING:
             return spec.adapter.lending_feeds
         elif direction == ILLDirection.BORROWING:

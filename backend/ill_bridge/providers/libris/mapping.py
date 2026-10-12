@@ -15,8 +15,11 @@ from ill_bridge.common.exceptions import (
 from ill_bridge.common.models import (
     Bibliographic,
     Library,
+    LocalStatus,
     ProviderRequestObservation,
     ProviderRequests,
+    ReceivingLibrary,
+    RequestParty,
 )
 from ill_bridge.common.states import WorkflowState
 
@@ -59,8 +62,12 @@ class LibrisMappingProfile:
             WorkflowState.REQUESTED,
             True,
         ),  # Uteliggande
+        ("2", None, None): StatusMapping(
+            WorkflowState.RECEIVED,
+            True,
+        ),  # Requester has received the request and informed with local status code 2 (Mottagen)
         ("3", None, None): StatusMapping(
-            WorkflowState.REQUESTED,
+            WorkflowState.ACKNOWLEDGED,
             True,
         ),  # Läst — read acknowledgement
         ("6", None, None): StatusMapping(
@@ -77,8 +84,8 @@ class LibrisMappingProfile:
             False,
         ),  # Remitterad
         ("9", None, None): StatusMapping(
-            WorkflowState.ACCEPTED,
-            False,
+            WorkflowState.RESERVED,
+            True,
         ),  # Reserverad
         # `10` Levererad — interpretation depends on context.
         ("10", ILLDirection.LENDING, RequestType.LOAN): StatusMapping(
@@ -97,7 +104,56 @@ class LibrisMappingProfile:
             WorkflowState.FULFILLED,
             True,
         ),
+        ("11", ILLDirection.LENDING, RequestType.LOAN): StatusMapping(
+            WorkflowState.CANCELLED,
+            True,
+        ),  # Cancel status_code = 11, status=Avbeställd
     }
+
+    # Requesting library's own post-delivery tracking (`local_status_code`).
+    #
+    # This is a SEPARATE code namespace from `status_code`: e.g. local "3"
+    # (Omlån) must never be read as status "3" (Läst). Same key shape as
+    # STATUS_CODE_MAP: (local_status_code, direction, request_type).
+    #
+    # Only consulted once the request has been delivered (see
+    # POST_DELIVERY_STATUS_CODES); "0" means no local status is set.
+    LOCAL_STATUS_CODE_MAP: ClassVar[
+        dict[
+            tuple[str, ILLDirection | None, RequestType | None],
+            StatusMapping,
+        ]
+    ] = {
+        ("1", None, None): StatusMapping(
+            WorkflowState.ARRIVED,
+            True,
+        ),  # Anländ — item has arrived at the requesting library
+        ("2", None, None): StatusMapping(
+            WorkflowState.RECEIVED,
+            True,
+        ),  # Mottagen — requester has received the item/ it is on loan to the patron
+        ("3", None, None): StatusMapping(
+            WorkflowState.RENEWAL_REQUESTED,
+            True,
+        ),  # Omlån — renewed; loan is still active
+        # 'local_status': 'Återlämnad', 'local_status_code': '5'
+        ("5", None, None): StatusMapping(
+            WorkflowState.RETURNED_FROM_PATRON,
+            True,
+        ),  # Återlämnad — returned from patron, but not yet returned to lending library
+        # 'local_status': 'Returnerad', 'local_status_code': '6'
+        ("6", None, None): StatusMapping(
+            WorkflowState.RETURN_IN_TRANSIT,
+            True,
+        ),  # Returnerad — returned to lending library, but not yet received
+        # TODO: verify remaining local codes (Återsänd, Avslutad, ...)
+    }
+
+    # `status_code` values after which `local_status_code` becomes meaningful.
+    POST_DELIVERY_STATUS_CODES: ClassVar[frozenset[str]] = frozenset({"10"})
+
+    # `status_code` values that always win over any local status.
+    TERMINAL_STATUS_CODES: ClassVar[frozenset[str]] = frozenset({"6", "11", "13"})
 
     MEDIA_TYPE_CODE_MAP: ClassVar[dict[str, RequestType]] = {
         "1": RequestType.LOAN,
@@ -114,6 +170,8 @@ class LibrisMappingProfile:
             "media_type",
             "status_code",
             "status",
+            "local_status_code",
+            "local_status",
             "last_modified",
             "isbn_issn",
             "title",
@@ -125,19 +183,68 @@ class LibrisMappingProfile:
         }
     )
 
+    @staticmethod
+    def _lookup(
+        status_map: Mapping[
+            tuple[str, ILLDirection | None, RequestType | None], StatusMapping
+        ],
+        code: str,
+        direction: ILLDirection,
+        request_type: RequestType,
+    ) -> StatusMapping | None:
+        """Most specific mapping first, then the direction/type-independent one."""
+        return status_map.get((code, direction, request_type)) or status_map.get(
+            (code, None, None)
+        )
+
     def lookup_state(
         self,
         code: str,
         direction: ILLDirection,
         request_type: RequestType,
     ) -> StatusMapping | None:
+        """Resolve a Libris `status_code`."""
+        return self._lookup(self.STATUS_CODE_MAP, code, direction, request_type)
+
+    def lookup_local_state(
+        self,
+        code: str,
+        direction: ILLDirection,
+        request_type: RequestType,
+    ) -> StatusMapping | None:
+        """Resolve a Libris `local_status_code`."""
+        return self._lookup(self.LOCAL_STATUS_CODE_MAP, code, direction, request_type)
+
+    def resolve_state(
+        self,
+        status_code: str,
+        local_status_code: str,
+        direction: ILLDirection,
+        request_type: RequestType,
+    ) -> StatusMapping | None:
         """
-        Resolve the most specific status mapping first, then the
-        direction/type-independent fallback.
+        Combine `status_code` and `local_status_code` into one mapping.
+
+        1. A terminal status (rejected/cancelled) always wins.
+        2. After delivery, a known local status refines the state.
+        3. Otherwise the request status is used.
         """
-        return self.STATUS_CODE_MAP.get(
-            (code, direction, request_type)
-        ) or self.STATUS_CODE_MAP.get((code, None, None))
+        if status_code in self.TERMINAL_STATUS_CODES:
+            return self.lookup_state(status_code, direction, request_type)
+
+        has_local = local_status_code not in ("", "0")
+        if has_local: # TODO: and status_code in self.POST_DELIVERY_STATUS_CODES: check with real data
+            local_mapped = self.lookup_local_state(
+                local_status_code, direction, request_type
+            )
+            if local_mapped is not None:
+                return local_mapped
+            # Unknown local code: fall back to the request status, but do
+            # not claim confidence about a state we could not interpret.
+            mapped = self.lookup_state(status_code, direction, request_type)
+            return StatusMapping(mapped.state, False) if mapped else None
+
+        return self.lookup_state(status_code, direction, request_type)
 
     @staticmethod
     def derive_direction(
@@ -243,11 +350,19 @@ class LibrisMappingProfile:
         )
 
         request_type = self.map_request_type(media_code)
+        local_status = LocalStatus(
+            status=str(record.get("local_status") or ""),
+            code=str(record.get("local_status_code") or "0"),
+        )
 
+        # Keep the Libris request status as the provider status; the local
+        # status is preserved separately on `local_status`.
         status_code = str(record.get("status_code") or "")
+        status_text = record.get("status")
 
-        mapped = self.lookup_state(
+        mapped = self.resolve_state(
             status_code,
+            local_status.code,
             direction,
             request_type,
         )
@@ -280,8 +395,43 @@ class LibrisMappingProfile:
             active_lending_library=(
                 Library(value=str(active_library)) if active_library else None
             ),
+            receiving_library=(
+                ReceivingLibrary(
+                    library_code=str(record["receiving_library"]["library_code"]),
+                    name=str(record["receiving_library"]["name"]),
+                    department=str(record["receiving_library"].get("department") or ""),
+                    address1=str(record["receiving_library"].get("address1") or ""),
+                    address2=str(record["receiving_library"].get("address2") or ""),
+                    address3=str(record["receiving_library"].get("address3") or ""),
+                    zip_code=str(record["receiving_library"].get("zip_code") or ""),
+                    city=str(record["receiving_library"].get("city") or ""),
+                    fax=str(record["receiving_library"].get("fax") or ""),
+                    email=str(record["receiving_library"].get("email") or ""),
+                    bibsam=bool(record["receiving_library"].get("bibsam") or False),
+                )
+                if record.get("receiving_library")
+                else None
+            ),
+            recipients=[
+                RequestParty(
+                    library_id=str(recipient.get("library_id")),
+                    library_code=str(recipient.get("library_code")),
+                    is_active_library=bool(recipient.get("is_active_library") or False),
+                    location=str(recipient.get("location") or ""),
+                    response_id=str(recipient.get("response_id") or ""),
+                    response=str(recipient.get("response") or ""),
+                    response_date=(
+                        datetime.fromisoformat(recipient["response_date"])
+                        if recipient.get("response_date")
+                        else None
+                    ),
+                    reserve=bool(recipient.get("reserve") or False),
+                )
+                for recipient in record.get("recipients", [])
+            ],
+            local_status=local_status,
             bibliographic=self._bibliographic(record),
-            provider_status_raw=record.get("status"),
+            provider_status_raw=status_text,
             provider_status_code=status_code or None,
             provider_revision=provider_revision,
             observed_at=observed_at,

@@ -43,7 +43,7 @@ class IllRequests(Base):
             name="ill_requests_request_type_check",
         ),
         CheckConstraint(
-            "workflow_state = ANY (ARRAY['REQUESTED'::text, 'ACCEPTED'::text, 'ON_HOLD'::text, 'IN_TRANSIT'::text, 'RECEIVED'::text, 'READY_FOR_PICKUP'::text, 'ON_LOAN'::text, 'RETURN_PENDING'::text, 'RETURN_IN_TRANSIT'::text, 'RETURNED'::text, 'FULFILLED'::text, 'COMPLETED'::text, 'CANCEL_PENDING'::text, 'CANCELLED'::text, 'REJECTED'::text, 'EXPIRED'::text])",
+            "workflow_state = ANY (ARRAY['REQUESTED'::text, 'ACKNOWLEDGED'::text, 'RESERVED'::text, 'ACCEPTED'::text, 'ON_HOLD'::text, 'IN_TRANSIT'::text, 'DELIVERED'::text, 'RENEWAL_REQUESTED'::text, 'RENEWAL_ACKNOWLEDGED'::text, 'RECEIVED'::text, 'READY_FOR_PICKUP'::text, 'ON_LOAN'::text, 'RETURNED_FROM_PATRON'::text, 'RETURN_PENDING'::text, 'RETURN_IN_TRANSIT'::text, 'RETURNED'::text, 'FULFILLED'::text, 'COMPLETED'::text, 'CANCEL_PENDING'::text, 'CANCELLED'::text, 'REJECTED'::text, 'EXPIRED'::text])",
             name="ill_requests_workflow_state_check",
         ),
         ForeignKeyConstraint(

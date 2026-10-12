@@ -19,17 +19,17 @@ AuthMode = Literal["oidc", "mock"]
 
 LIBRIS_BASE_URL = "https://iller.libris.kb.se/librisfjarrlan/api"
 
-
+# TODO: Move it to the database and make it configurable per tenant. For now, we hardcode it here.
 FOLIO_TENANT_PATRON_GROUPS: Mapping[str, FolioPatronGroup] = MappingProxyType(
     {
         "bth": FolioPatronGroup(
-            name="Bibliotek", uuid="f3e0c1d5-4b6a-4e2f-9c8b-1a2b3c4d5e6f"
+            name="Bibliotek", uuid="20b7c9c9-8dd9-422f-a672-16ffadd8302a"
         ),
         "mdu": FolioPatronGroup(
-            name="Andra Bibliotek", uuid="a1b2c3d4-5e6f-7g8h-9i0j-1a2b3c4d5e6f"
+            name="Andra bibliotek", uuid="ec9e5bab-93ac-4de8-8cce-bedc39640d96"
         ),
         "hh": FolioPatronGroup(
-            name="Bibliotek", uuid="b1c2d3e4-5f6g-7h8i-9j0k-1b2c3d4e5f6g"
+            name="Bibliotek", uuid="8969727e-1ebf-4f68-9be8-69790f0d8da9"
         ),
     }
 )

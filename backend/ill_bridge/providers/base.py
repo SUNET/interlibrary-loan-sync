@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
+from ill_bridge.common.enums import ILLDirection
 from ill_bridge.common.models import (
     ProviderCapabilities,
     ProviderRequestObservation,
@@ -19,6 +20,10 @@ class IllProvider(Protocol):
 
     @property
     def is_writable(self) -> bool:
+        pass
+    
+    @staticmethod
+    def archive(*, direction: ILLDirection) -> tuple[str, ...]:
         pass
 
     async def fetch_requests(self, *, feed: str) -> ProviderRequests:

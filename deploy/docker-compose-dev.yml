@@ -14,7 +14,8 @@ services:
 
   migrate:
     build: ../backend
-    # Domain schema, then the queue schema — both in the same database.
+    # 1. Domain schema (pyway, migrations/V*.sql), then
+    # 2. queue schema (Procrastinate) — both in the same database.
     command: python -m ill_bridge.jobs.migrate
     environment: &backend_env
       PYTHONPATH: /app
@@ -37,32 +38,21 @@ services:
     volumes:
       # Bind to see changes directly
       - ../backend/ill_bridge:/app/ill_bridge
+      # New V*.sql files are picked up without rebuilding the image
+      - ../backend/migrations:/app/migrations:ro
     depends_on:
       db: { condition: service_healthy }
-
-  # TODO: add pyway migration service to docker-compose-dev.yml,
-  # migrate:
-  #   build: .
-  #   command: pyway migrate
-  #   environment:
-  #     PYWAY_TYPE: postgres
-  #     PYWAY_DATABASE_HOST: db
-  #     PYWAY_DATABASE_PORT: 5432
-  #     PYWAY_DATABASE_NAME: myapp
-  #     PYWAY_DATABASE_USERNAME: myapp
-  #     PYWAY_DATABASE_PASSWORD: myapp
-  #     PYWAY_DATABASE_MIGRATION_DIR: /app/migrations
-  #     PYWAY_TABLE: public.pyway
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
 
   api:
     build: ../backend
     command: uvicorn --factory ill_bridge.api.main:create_app --host 0.0.0.0 --port 8000 --reload
     environment: *backend_env
     ports: ["8000:8000"]
-    depends_on: [db, fake-provider, mailpit]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      fake-provider: { condition: service_started }
+      mailpit: { condition: service_started }
     # docker compose watch
     develop:
       watch:

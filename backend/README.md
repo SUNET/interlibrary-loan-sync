@@ -103,3 +103,9 @@ uvx ruff check ill_bridge/
 An autouse fixture in `conftest.py` strips `ILL_*` and `HALMSTAD_*` from the environment and clears the settings cache — without it, a developer with real credentials exported gets different results from CI.
 
 interlibrary_loan
+
+```bash
+secretspec run -- uv run pyway validate
+secretspec run -- uv run pyway info
+secretspec run -- uv run pyway migrate
+```

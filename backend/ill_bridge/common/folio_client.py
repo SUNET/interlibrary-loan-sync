@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
 import time
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
 import httpx2
+from ill_bridge.common.models import (
+    ProviderRequestObservation,
+    ReceivingLibrary,
+)
 from typing_extensions import Self
 
 
@@ -75,7 +81,9 @@ class FolioApiClient:
         except httpx2.HTTPError as exc:
             raise AuthenticationError("Failed to obtain access token") from exc
         except (KeyError, TypeError, ValueError) as exc:
-            raise AuthenticationError("Authentication response has no access token") from exc
+            raise AuthenticationError(
+                "Authentication response has no access token"
+            ) from exc
 
         self._token_obtained_at = time.monotonic()
         self._token_ttl = max(float(payload.get("expires_in", 300)) - 50, 0)
@@ -188,6 +196,117 @@ class FolioApiClient:
 
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
         await self.close()
+
+
+def get_folio_client() -> FolioApiClient:
+    environment = os.getenv("ILL_ENVIRONMENT", "test")
+    library_tenant = os.getenv("ILL_TENANT_NAME", "bth")
+    folio_tenant = os.getenv("ILL_FOLIO_TENANT", "diku")
+    return FolioApiClient(
+        username=os.environ["ILL_FOLIO_TENANT_USERNAME"],
+        secret=os.environ["ILL_FOLIO_TENANT_SECRET"],
+        auth_base_url=(
+            f"https://auth.{library_tenant.lower()}-{environment}.bibliotek.sunet.se"
+        ),
+        api_base_url=(
+            f"https://api.{library_tenant.lower()}-{environment}.bibliotek.sunet.se"
+        ),
+        realm=folio_tenant,
+        tenant=folio_tenant,
+    )
+
+
+async def api_get(
+    client,
+    endpoint: str,
+    params: dict | None = None,
+) -> list[dict]:
+    """General GET request to retrieve all records from a FOLIO endpoint."""
+    if params is None:
+        params = {"limit": 1000, "offset": 0}
+    response = await client.get(endpoint, params=params)
+    response.raise_for_status()
+    data = await response.json()
+    return data
+
+
+async def get_folio_patron_group(
+    client: FolioApiClient, group_name: str
+) -> dict | None:
+    """Retrieve a FOLIO patron group by name."""
+    response = await client.get(
+        "groups",
+        params={
+            "query": f'group=="{group_name}"',
+            "limit": 1000,
+        },
+    )
+    response.raise_for_status()
+    user_groups = (await response.json()).get("usergroups", [])
+    patron_group = next(
+        (group for group in user_groups if group.get("group") == group_name),
+        None,
+    )
+
+    if patron_group is None:
+        raise ValueError(f"FOLIO patron group '{group_name}' not found")
+
+    return patron_group
+
+
+async def create_folio_requesting_library(
+    client: FolioApiClient,
+    receiving_library: ReceivingLibrary,
+    patron_group_id: str,
+) -> dict:
+    """Create a FOLIO requesting library unless it already exists."""
+    username = receiving_library.library_code
+    existing_response = await client.get(
+        "users",
+        params={"query": f'username=="{username}"', "limit": 1},
+    )
+    existing_response.raise_for_status()
+    existing_users = existing_response.json().get("users", [])
+    if existing_users:
+        response =  {
+            "id": existing_users[0].get("id"),
+            "status_code": existing_response.status_code,
+            "text": existing_response.text,
+            "url": existing_response.url,
+            "is_success": existing_response.is_success,
+            "is_error": existing_response.is_error,
+            "created": False,
+        }
+        print(
+            f"Requesting library '{username}' already exists in FOLIO. Skipping creation."
+        )
+        return response
+
+    payload = {
+        "active": True,
+        "personal": {
+            "preferredContactTypeId": "002",
+            "lastName": receiving_library.name or "",
+            "email": receiving_library.email or "",
+        },
+        "username": receiving_library.library_code,
+        "type": "",
+        "preferredEmailCommunication": [],
+        "patronGroup": patron_group_id,
+        "id": str(uuid.uuid4()),
+        "departments": [],
+    }
+    response = await client.post("users", json_data=payload)
+    response.raise_for_status()
+    return {
+        "id": payload["id"],
+        "status_code": response.status_code,
+        "text": response.text,
+        "url": response.url,
+        "is_success": response.is_success,
+        "is_error": response.is_error,
+        "created": True,
+    }
 
 
 class AuthenticationError(Exception):

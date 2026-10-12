@@ -51,6 +51,41 @@ class Library(BaseModel):
     display_name: str | None = None
 
 
+class ReceivingLibrary(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    library_code: str
+    name: str
+    department: str | None = None
+    address1: str | None = None
+    address2: str | None = None
+    address3: str | None = None
+    zip_code: str | None = None
+    city: str | None = None
+    fax: str | None = None
+    email: str | None = None
+    bibsam: bool | None = False
+    
+    
+
+class RequestParty(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    library_id: str
+    library_code: str
+    is_active_library: bool
+    location: str | None = None
+    response_id: str | None = None
+    response: str | None = None
+    response_date: datetime | None = None
+    reserve: bool | None = False
+
+class LocalStatus(BaseModel):
+    model_config = ConfigDict(strict=True)
+    
+    status: str
+    code: str
+
 class Bibliographic(BaseModel):
     model_config = ConfigDict(strict=True)
 
@@ -86,6 +121,9 @@ class ProviderRequestObservation(BaseModel):
 
     requesting_library: Library
     active_lending_library: Library | None = None
+    receiving_library: ReceivingLibrary | None = None
+    recipients: list[RequestParty] = Field(default_factory=list)
+    local_status: LocalStatus | None = None
 
     bibliographic: Bibliographic
     patron_reference: PatronReference | None = None
@@ -130,8 +168,14 @@ class ProviderRequestObservation(BaseModel):
             f"external_request_id={self.external_request_id!r}, "
             f"request_type={self.request_type.value!r}, "
             f"provider_status_raw={self.provider_status_raw!r}, "
+            f"status_code={self.provider_status_code!r}, "
             f"direction={self.direction.value!r}, "
-            f"mapped_state={self.mapped_state.value if self.mapped_state else None!r}"
+            f"mapped_state={self.mapped_state.value if self.mapped_state else None!r}, "
+            f"mapping_confident={self.mapping_confident!r}, "
+            f"patron_reference={self.patron_reference!r}, "
+            f"receiving_library={self.receiving_library!r}, "
+            f"recipients={self.recipients!r}, "
+            f"local_status={self.local_status!r}, "
             ")"
         )
     

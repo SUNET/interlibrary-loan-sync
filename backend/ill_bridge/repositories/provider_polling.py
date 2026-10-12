@@ -18,6 +18,7 @@ from ill_bridge.database.models import (
     RawProviderRequests,
     RequestParties,
     StateAuditLogs,
+    Tenants,
 )
 from ill_bridge.providers.base import IllProvider
 from sqlalchemy import CursorResult, delete, func, select, update
@@ -54,6 +55,10 @@ class ProviderPollingRepository:
             ).where(Providers.enabled.is_(True))
         )
         return [ProviderRef(*row) for row in result.all()]
+
+    async def get_tenant(self, tenant_id: UUID) -> Tenants | None:
+        """Return a tenant by id, or None when it does not exist."""
+        return await self._session.get(Tenants, tenant_id)
 
     async def get_provider_by_id_for_tenant(
         self, tenant_id: UUID, provider_id: UUID
@@ -93,10 +98,8 @@ class ProviderPollingRepository:
             )
         )
         request_parties = []
-        for ordinal, recipient in enumerate(
-            observation.extensions.get("recipients", [])
-        ):
-            is_active = bool(recipient.get("is_active_library"))
+        for ordinal, recipient in enumerate(observation.recipients):
+            is_active = bool(recipient.is_active_library)
             role = "ACTIVE_LENDER" if is_active else "LENDER_CANDIDATE"
             request_parties.append(
                 RequestParties(
@@ -105,12 +108,12 @@ class ProviderPollingRepository:
                     ill_request_id=ill_request_id,
                     role=role,
                     scheme="SIGEL",
-                    code=recipient["library_code"],
+                    code=recipient.library_code,
                     ordinal=ordinal,
                     is_active=is_active,
-                    response_code=recipient.get("response_id"),
-                    response_at=recipient.get("response_date"),
-                    location=recipient.get("location") or None,
+                    response_code=recipient.response_id,
+                    response_at=recipient.response_date,
+                    location=recipient.location or None,
                 )
             )
         self._session.add_all(request_parties)
@@ -129,11 +132,36 @@ class ProviderPollingRepository:
         new_state: WorkflowState,
         processing_state: ProcessingState,
         expected_version: int | None,
+        current_processing_state: str | None = None,
     ) -> tuple[int, tuple[EffectKind, ...]]:
-        """Apply an observation to the canonical ILL request."""
+        """Apply an observation to the canonical ILL request.
+
+        Observations that change neither the workflow state nor the processing
+        state are treated as no-ops: no version bump, audit log or effects.
+        """
         from_workflow_state = from_state.value if from_state is not None else None
         to_workflow_state = new_state.value
         processing_state_value = processing_state.value
+
+        if (
+            expected_version is not None
+            and from_state == new_state
+            and current_processing_state == processing_state_value
+        ):
+            # No-op observation: neither workflow nor processing state changed.
+            # Refresh provider-side fields and parties, but do not bump the
+            # version, write an audit row, or queue effects.
+            await self.touch_ill_request_from_observation(
+                tenant_id=tenant_id,
+                ill_request_id=request_id,
+                observation=obs,
+            )
+            await self._sync_parties_for_observation(
+                tenant_id=tenant_id,
+                ill_request_id=request_id,
+                observation=obs,
+            )
+            return expected_version, ()
 
         if expected_version is None:
             # Create a new ILL request from the observation
@@ -195,6 +223,13 @@ class ProviderPollingRepository:
                 effect_kind=effect_kind,
                 from_workflow_state=from_state,
                 to_workflow_state=new_state,
+                context={
+                    "receiving_library": (
+                        obs.receiving_library.model_dump()
+                        if obs.receiving_library
+                        else None
+                    ),
+                },
             )
         return request_version, queued_effects
 
@@ -277,6 +312,28 @@ class ProviderPollingRepository:
         )
         return result.rowcount == 1
 
+    async def touch_ill_request_from_observation(
+        self,
+        *,
+        tenant_id: UUID,
+        ill_request_id: UUID,
+        observation: ProviderRequestObservation,
+    ) -> None:
+        """Refresh provider-side fields without changing state or version."""
+        await self._session.execute(
+            update(IllRequests)
+            .where(
+                IllRequests.tenant_id == tenant_id,
+                IllRequests.id == ill_request_id,
+            )
+            .values(
+                provider_status_raw=observation.provider_status_raw,
+                provider_status_code=observation.provider_status_code,
+                provider_revision=observation.provider_revision,
+                observed_at=observation.observed_at,
+            )
+        )
+
     async def add_ill_request_observation_audit_log(
         self,
         *,
@@ -317,8 +374,13 @@ class ProviderPollingRepository:
         effect_kind: str,
         from_workflow_state: WorkflowState | None,
         to_workflow_state: WorkflowState,
+        context: dict[str, Any] | None = None,
     ) -> EffectQueue:
-        """Queue one downstream effect for an ILL request state transition."""
+        """Queue one downstream effect for an ILL request state transition.
+
+        `context` is a snapshot of the observation data the effect handler
+        needs, so the dispatcher does not have to re-derive it later.
+        """
         effect_queue_entry = EffectQueue(
             id=uuid4(),
             tenant_id=tenant_id,
@@ -332,6 +394,7 @@ class ProviderPollingRepository:
                     else None
                 ),
                 "to": to_workflow_state.value,
+                **(context or {}),
             },
         )
         self._session.add(effect_queue_entry)

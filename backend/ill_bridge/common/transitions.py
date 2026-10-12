@@ -8,9 +8,21 @@ from ill_bridge.common.states import WorkflowState
 WORKFLOW_TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
     WorkflowState.REQUESTED: frozenset({
         WorkflowState.ACCEPTED,
+        WorkflowState.ACKNOWLEDGED,
         WorkflowState.REJECTED,
         WorkflowState.ON_HOLD,
         WorkflowState.EXPIRED,
+        WorkflowState.CANCELLED,
+    }),
+    
+    WorkflowState.ACKNOWLEDGED: frozenset({
+        WorkflowState.RESERVED,
+        WorkflowState.CANCELLED,
+    }),
+    
+    WorkflowState.RESERVED: frozenset({
+        WorkflowState.IN_TRANSIT,
+        WorkflowState.CANCELLED,
     }),
 
     WorkflowState.ACCEPTED: frozenset({
@@ -25,13 +37,29 @@ WORKFLOW_TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
     }),
 
     WorkflowState.IN_TRANSIT: frozenset({
+        WorkflowState.ARRIVED,
         WorkflowState.RECEIVED,
     }),
 
-    WorkflowState.RECEIVED: frozenset({
-        WorkflowState.READY_FOR_PICKUP,
+    WorkflowState.ARRIVED: frozenset({
+        WorkflowState.RECEIVED,
+        WorkflowState.RETURNED_FROM_PATRON,
     }),
 
+    WorkflowState.RECEIVED: frozenset({
+        WorkflowState.ON_LOAN,
+        WorkflowState.RENEWAL_REQUESTED,
+        WorkflowState.RETURNED_FROM_PATRON,
+    }),
+    
+    WorkflowState.RENEWAL_REQUESTED: frozenset({
+        WorkflowState.RETURNED_FROM_PATRON,
+    }),
+
+    WorkflowState.RETURNED_FROM_PATRON: frozenset({
+        WorkflowState.RETURN_IN_TRANSIT,
+    }),
+    
     WorkflowState.READY_FOR_PICKUP: frozenset({
         WorkflowState.ON_LOAN,
         WorkflowState.RETURN_PENDING,
@@ -47,6 +75,7 @@ WORKFLOW_TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
 
     WorkflowState.RETURN_IN_TRANSIT: frozenset({
         WorkflowState.RETURNED,
+        WorkflowState.RETURNED_FROM_PATRON, # For undo
     }),
 
     WorkflowState.RETURNED: frozenset({
@@ -69,4 +98,3 @@ class Workflow:
             raise InvalidWorkflowTransition(f"{self.state} -> {target}")
 
         return Workflow(state=target)
-
