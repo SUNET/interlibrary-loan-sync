@@ -1,3 +1,7 @@
+"""Outgoing loans polling loop.
+> secretspec run -- uv run python -m ill_bridge.jobs.outgoing_loans
+"""
+
 import asyncio
 import logging
 import uuid
@@ -8,9 +12,6 @@ from rich.logging import RichHandler
 
 from ill_bridge.common.enums import ILLDirection
 from ill_bridge.common.exceptions import InvalidWorkflowTransition
-from ill_bridge.common.folio_client import (
-    get_folio_client,
-)
 from ill_bridge.common.models import (
     ProviderRequestObservation,
     ProviderRequests,
@@ -30,7 +31,6 @@ POLL_INTERVAL_SECONDS = 45.0
 DAYS = 1
 LOG_PATH = Path("logs/libris_loop.log")
 logger = logging.getLogger(__name__)
-folio_client = get_folio_client()
 
 
 def configure_logging() -> None:
@@ -304,7 +304,7 @@ async def poll_enabled_providers() -> None:
         await engine.dispose()
 
 
-async def main() -> None:
+async def run_forever() -> None:
     configure_logging()
     while True:
         try:
@@ -312,6 +312,10 @@ async def main() -> None:
         except Exception:
             logger.exception("provider polling cycle failed")
         await wait_for_next_poll()
+
+
+async def main() -> None:
+    await run_forever()
 
 
 if __name__ == "__main__":

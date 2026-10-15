@@ -198,24 +198,30 @@ class FolioApiClient:
         await self.close()
 
 
-def get_folio_client() -> FolioApiClient:
+def get_folio_client(tenant_key: str | None = None) -> FolioApiClient:
     environment = os.getenv("ILL_ENVIRONMENT", "test")
-    library_tenant = os.getenv("ILL_TENANT_NAME", "bth")
-    folio_tenant = os.getenv("ILL_FOLIO_TENANT", "diku")
-    return FolioApiClient(
-        username=os.environ["ILL_FOLIO_TENANT_USERNAME"],
-        secret=os.environ["ILL_FOLIO_TENANT_SECRET"],
+    library_tenant = tenant_key or os.getenv("ILL_TENANT_NAME", "bth")
+    folio_tenant = os.getenv(f"ILL_FOLIO_TENANT_{library_tenant.upper()}", "diku")
+    folio_realm = os.getenv(f"ILL_FOLIO_REALM_{library_tenant.upper()}", "diku")
+    client = FolioApiClient(
+        username=os.getenv(f"ILL_FOLIO_USERNAME_{library_tenant.upper()}"),
+        secret=os.getenv(f"ILL_FOLIO_SECRET_{library_tenant.upper()}"),
         auth_base_url=(
             f"https://auth.{library_tenant.lower()}-{environment}.bibliotek.sunet.se"
         ),
         api_base_url=(
             f"https://api.{library_tenant.lower()}-{environment}.bibliotek.sunet.se"
         ),
-        realm=folio_tenant,
+        realm=folio_realm,
         tenant=folio_tenant,
     )
 
-
+    print(
+        f"Creating FOLIO client for tenant '{library_tenant}' (FOLIO tenant: '{folio_tenant}', realm: '{folio_realm}') in environment '{environment}'"
+    )
+    print(f"===> Auth base URL: {client.auth_base_url}")
+    print(f"===> API base URL: {client.api_base_url}")
+    return client
 async def api_get(
     client,
     endpoint: str,

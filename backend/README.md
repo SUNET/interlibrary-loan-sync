@@ -51,6 +51,37 @@ tests/              unit, contracts, integration, live, fixtures
 `application/` must never import a task-queue library, and `providers/` must
 never import `folio/`. Those two rules keep the domain portable.
 
+## Docker builds and releases
+
+The **Build backend Docker image** GitHub Actions workflow builds
+`backend/Dockerfile` for `linux/amd64` when backend files change on `main`, or
+when started manually from the Actions tab. It does not push to a registry.
+Every successful build uploads a Docker image archive and SHA-256 checksum as
+an Actions artifact, retained for 14 days.
+
+For a GitHub Release, run the workflow manually and set **publish_release** to
+**true**. It defaults to **false**; pushes and unchecked manual runs never
+publish releases and use unique development image tags. Optionally supply a
+version such as `0.1.0` or `0.2.0-rc.1`; otherwise the version comes from
+`backend/pyproject.toml`. This sets the image tag and label, not the Python
+package version. Update `pyproject.toml` first if the package version must match.
+
+Opted-in runs create `ill-bridge-v<VERSION>` at the built commit and attach the
+archive and checksum. Existing releases are not overwritten, and the workflow
+does not change GitHub's latest-release designation.
+
+After downloading and extracting the Actions artifact (or downloading both
+Release assets), verify and load the image:
+
+```bash
+sha256sum -c ill-bridge-backend-<VERSION>-linux-amd64.tar.gz.sha256
+docker load --input ill-bridge-backend-<VERSION>-linux-amd64.tar.gz
+```
+
+The loaded image is tagged `ill-bridge-backend:<VERSION>`. Supply environment
+variables at runtime as described below; build artifacts must not contain
+deployment secrets.
+
 ## Configuration
 
 Environment variables, prefix `ILL_`. Precedence: kwargs → `os.environ` →

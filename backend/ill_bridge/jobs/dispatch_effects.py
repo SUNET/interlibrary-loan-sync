@@ -17,6 +17,8 @@ Not yet (TODO):
   * Handlers other than FOLIO_ADD_REQUESTING_LIBRARY.
 
 Run with:  python -m ill_bridge.jobs.dispatch_effects
+secretspec run -- uv run python -m ill_bridge.jobs.dispatch_effects
+dotenvx run -f /home/benedith/github/library_project/interlibrary_loan_system/mvp/python/ill-bridge/deploy/.env -- uv run python -m ill_bridge.jobs.dispatch_effects
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ill_bridge.common.effects import EffectKind
 from ill_bridge.common.folio_client import (
+    FolioApiClient,
     create_folio_requesting_library,
     get_folio_client,
 )
@@ -137,15 +140,15 @@ def _outcome_from_http_error(exc: Exception, *, idempotent: bool) -> EffectOutco
 # Handlers
 # ---------------------------------------------------------------------------
 
-_folio_client = None
+_folio_clients: dict[str, FolioApiClient] = {}
 
 
-def _folio():
+def _folio(tenant_key: str | None = None) -> FolioApiClient:
     # Lazy so importing this module does not require FOLIO env vars.
-    global _folio_client
-    if _folio_client is None:
-        _folio_client = get_folio_client()
-    return _folio_client
+    key = (tenant_key or os.getenv("ILL_TENANT_NAME", "bth")).lower()
+    if key not in _folio_clients:
+        _folio_clients[key] = get_folio_client(key)
+    return _folio_clients[key]
 
 
 @handles(EffectKind.FOLIO_ADD_REQUESTING_LIBRARY)
@@ -167,8 +170,13 @@ async def add_requesting_library(ctx: EffectContext) -> EffectOutcome:
         )
 
     try:
+        logger.info(
+            "creating FOLIO requesting library for tenant %s: %s",
+            ctx.tenant.id,
+            data,
+        )
         result = await create_folio_requesting_library(
-            client=_folio(),
+            client=_folio(ctx.tenant.folio_tenant_key),
             receiving_library=ReceivingLibrary(**data),
             patron_group_id=patron_group.uuid,
         )
@@ -229,7 +237,9 @@ async def _claim(session: AsyncSession, tenant_id: UUID) -> list[dict[str, Any]]
             "lease_seconds": LEASE_SECONDS,
         },
     )
-    return [dict(row) for row in result.mappings().all()]
+    rows = [dict(row) for row in result.mappings().all()]
+    logger.debug("claimed %d effect(s) for tenant %s", len(rows), tenant_id)
+    return rows
 
 
 async def _finish(
@@ -300,6 +310,8 @@ async def _execute_one(
 ) -> None:
     kind = row["kind"]
     handler = handler_for(kind)
+    print(f"Executing effect {row['id']} of kind {kind} for tenant {tenant.id}")  # Debugging line
+    print("Handler:", handler)  # Debugging line
     if handler is None:
         # Never drop an obligation: keep it queued and ask a human.
         logger.warning("no handler for effect %s (%s)", kind, row["id"])
@@ -392,7 +404,8 @@ async def dispatch_effects(sessionmaker) -> int:
     handled = 0
     async with sessionmaker() as session:
         tenants = (await session.execute(select(Tenants))).scalars().all()
-
+        
+    print(f"Dispatching effects for tenants: {[tenant.id for tenant in tenants]}")  # Debugging line
     for tenant in tenants:
         # One transaction per tenant: a failure in one tenant does not roll
         # back another tenant's completed effects.
@@ -403,6 +416,7 @@ async def dispatch_effects(sessionmaker) -> int:
             # Lease is committed; now execute, committing per effect so a
             # crash mid-batch keeps earlier results.
             for row in rows:
+                print(f"Dispatching effect {row['id']} for tenant {tenant.id}")  # Debugging line
                 async with session.begin():
                     await _set_tenant(session, tenant.id)
                     await _execute_one(session, tenant, row)
@@ -428,7 +442,11 @@ async def main() -> None:
                 logger.exception("effect dispatch cycle failed")
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
     finally:
-        await engine.dispose()
+        try:
+            await asyncio.gather(*(client.close() for client in _folio_clients.values()))
+        finally:
+            _folio_clients.clear()
+            await engine.dispose()
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ services:
       # Points at the simulator, NOT at iller.libris.kb.se
       ILL_LIBRIS_BASE_URL: http://fake-provider:9000/librisfjarrlan/api
       ILL_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      ILL_ENVIRONMENT: ${ILL_ENVIRONMENT:-local}
+      ILL_ENVIRONMENT: ${ILL_ENVIRONMENT}
       ILL_API_HOST: 0.0.0.0 # explicit: default is loopback
       # Pyway migration settings
       PYWAY_TYPE: postgres
@@ -71,7 +71,7 @@ services:
   worker-provider:
     build: ../backend
     command: >
-      procrastinate --app=ill_bridge.jobs.worker.app worker --queues=test --concurrency=4
+      procrastinate --app=ill_bridge.jobs.worker.app worker --queues=provider,test --concurrency=4
     volumes:
       # Bind to see changes directly
       - ../backend/ill_bridge:/app/ill_bridge
@@ -79,6 +79,9 @@ services:
       <<: *backend_env
       ILL_SMTP_HOST: "mailpit"
       ILL_SMTP_PORT: "1025"
+      BTH_LIBRIS_PASSWORD: ${BTH_LIBRIS_PASSWORD}
+      HH_LIBRIS_PASSWORD: ${HH_LIBRIS_PASSWORD}
+      MDU_LIBRIS_PASSWORD: ${MDU_LIBRIS_PASSWORD}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -89,6 +92,32 @@ services:
       # Bind to see changes directly
       - ../backend/ill_bridge:/app/ill_bridge
     environment: *backend_env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  effect-dispatcher:
+    build: ../backend
+    command: python -m ill_bridge.jobs.dispatch_effects
+    volumes:
+      # Bind to see changes directly
+      - ../backend/ill_bridge:/app/ill_bridge
+    environment:
+      <<: *backend_env
+      ILL_FOLIO_SECRET_BTH: ${ILL_FOLIO_SECRET_BTH}
+      ILL_FOLIO_SECRET_HH: ${ILL_FOLIO_SECRET_HH}
+      ILL_FOLIO_SECRET_MDU: ${ILL_FOLIO_SECRET_MDU}
+      # ---
+      ILL_FOLIO_USERNAME_BTH: ${ILL_FOLIO_USERNAME_BTH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_BTH: ${ILL_FOLIO_REALM_BTH:-bth}
+      ILL_FOLIO_TENANT_BTH: ${ILL_FOLIO_TENANT_BTH:-bth}
+      # ---
+      ILL_FOLIO_USERNAME_HH: ${ILL_FOLIO_USERNAME_HH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_HH: ${ILL_FOLIO_REALM_HH:-diku}
+      ILL_FOLIO_TENANT_HH: ${ILL_FOLIO_TENANT_HH:-diku}
+      # ---
+      ILL_FOLIO_USERNAME_MDU: ${ILL_FOLIO_USERNAME_MDU:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_MDU: ${ILL_FOLIO_REALM_MDU:-diku}
+      ILL_FOLIO_TENANT_MDU: ${ILL_FOLIO_TENANT_MDU:-diku}
     depends_on:
       migrate: { condition: service_completed_successfully }
 

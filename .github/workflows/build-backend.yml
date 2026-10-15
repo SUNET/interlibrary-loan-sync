@@ -1,0 +1,144 @@
+name: Build backend Docker image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/**
+      - .github/workflows/build-backend.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.1.0). Empty uses backend/pyproject.toml.'
+        type: string
+        required: false
+        default: ''
+      publish_release:
+        description: 'Create a GitHub Release and attach the Docker image archive.'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      image: ${{ steps.metadata.outputs.image }}
+      artifact: ${{ steps.metadata.outputs.artifact }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Resolve image version
+        id: metadata
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("backend/pyproject.toml").read_text())
+          version = os.environ["REQUESTED_VERSION"].strip() or project["project"]["version"]
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", version):
+              raise SystemExit("Version must be X.Y.Z or X.Y.Z-suffix (without a v prefix).")
+          if os.environ["PUBLISH_RELEASE"] != "true":
+              version += f"-dev.{os.environ['GITHUB_RUN_NUMBER']}.{os.environ['GITHUB_RUN_ATTEMPT']}.{os.environ['GITHUB_SHA'][:12]}"
+          if len(version) > 128:
+              raise SystemExit("Resulting version exceeds the Docker tag length limit.")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\n")
+              output.write(f"image=ill-bridge-backend:{version}\n")
+              output.write(f"artifact=ill-bridge-backend-{version}-linux-amd64\n")
+          PY
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.metadata.outputs.image }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export image and checksum
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          ARTIFACT: ${{ steps.metadata.outputs.artifact }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          docker save "$IMAGE" | gzip > "artifacts/$ARTIFACT.tar.gz"
+          (cd artifacts && sha256sum "$ARTIFACT.tar.gz" > "$ARTIFACT.tar.gz.sha256")
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.artifact }}
+          path: artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Publish opted-in GitHub Release
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download image archive and checksum
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: artifacts
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          ARTIFACT: ${{ needs.build.outputs.artifact }}
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          Backend Docker image built from backend/Dockerfile for linux/amd64.
+
+          Source commit: $GITHUB_SHA
+          Image: $IMAGE
+
+          Download both assets, then verify and load the image:
+
+              sha256sum -c $ARTIFACT.tar.gz.sha256
+              docker load --input $ARTIFACT.tar.gz
+
+          Supply runtime configuration separately; no deployment secrets are included.
+          EOF
+          gh release create "ill-bridge-v$VERSION" \
+            "artifacts/$ARTIFACT.tar.gz" \
+            "artifacts/$ARTIFACT.tar.gz.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "ILL Bridge $VERSION" \
+            --notes-file release-notes.md \
+            --latest=false

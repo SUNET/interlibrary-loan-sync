@@ -1,24 +1,26 @@
 import os
-
-from ill_bridge.jobs.app import app, settings
-import procrastinate
 import smtplib
 from email.message import EmailMessage
+
+import procrastinate
+
+from ill_bridge.jobs.app import app, settings
+from ill_bridge.jobs.outgoing_loans import configure_logging, poll_enabled_providers
 
 
 @app.task(
     queue="provider",
-    name="poll_provider",
-    # Procrastinate retries by policy rather than by exception handling.
+    name="poll_libris_lending",
     retry=procrastinate.RetryStrategy(
-        max_attempts=6,
-        wait=5,  # seconds
-        exponential_wait=2,  # 5, 10, 20, 40, 80, 160
+        max_attempts=3,
+        wait=30,
+        exponential_wait=2,
     ),
 )
-async def poll_provider(cursor_row_id: str) -> None:
-    """Fetch one page from a provider feed and capture it durably."""
-    print(f"poll_provider at: {cursor_row_id}")
+async def poll_libris_lending() -> None:
+    """Run one Libris lending provider polling cycle."""
+    configure_logging()
+    await poll_enabled_providers()
 
 
 # Procrastinate's cron accepts an optional 6th column for SECONDS, so the

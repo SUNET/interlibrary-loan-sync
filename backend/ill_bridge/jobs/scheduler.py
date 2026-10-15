@@ -9,7 +9,7 @@ from faker import Faker
 from ill_bridge.jobs.worker import app as procrastinate_app
 from ill_bridge.jobs.tasks import (
     ping,
-    poll_provider,
+    poll_libris_lending,
     send_email,
 )
 
@@ -19,8 +19,8 @@ Faker.seed(seq)
 rng = random.Random(seq)
 
 
-async def enqueue_poll_provider():
-    await poll_provider.defer_async(cursor_row_id="provider-main")
+async def enqueue_poll_libris_lending():
+    await poll_libris_lending.defer_async()
 
 
 async def enqueue_ping():
@@ -42,6 +42,13 @@ async def main() -> None:
         scheduler = AsyncIOScheduler()
 
         # Smoke/health task every minute
+        scheduler.add_job(
+            enqueue_poll_libris_lending,
+            IntervalTrigger(seconds=45),
+            id="poll-libris-lending",
+            replace_existing=True,
+        )
+
         scheduler.add_job(
             enqueue_ping,
             IntervalTrigger(minutes=1),
