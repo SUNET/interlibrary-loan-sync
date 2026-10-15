@@ -2,7 +2,7 @@
 
 A provider-agnostic interlibrary loan service bridging **FOLIO** and **Libris**, built for a Swedish university library consortium.
 
-It ingests ILL transactions from Libris, verifies patrons against FOLIO, provisions temporary inventory for incoming loans, tracks outgoing loans against local holdings, and synchronises state in both directions — as far as the Libris contract actually permits.
+It ingests ILL transactions from Libris, verifies patrons against FOLIO, provisions temporary inventory for incoming loans, tracks outgoing loans against local holdings, and synchronises state in both directions, as far as the Libris contract actually permits.
 
 ## Layout
 
@@ -26,9 +26,9 @@ secretspec run -- uv run python -m ill_bridge.jobs.migrate
 
 ## Two directions
 
-**Inlån (borrowing)** — a local patron needs material held elsewhere. The request arrives from Libris, the patron is verified against `mod-users`, a temporary item and circulation request are created, and FOLIO's own notice policy tells the patron when it arrives.
+**Inlån (borrowing):** a local patron needs material held elsewhere. The request arrives from Libris, the patron is verified against `mod-users`, a temporary item and circulation request are created, and FOLIO's own notice policy tells the patron when it arrives.
 
-**Utlån (lending)** — another library needs material we hold. Staff select an existing item, check it out to an institutional borrower account, and record shipment.
+**Utlån (lending):** another library needs material we hold. Staff select an existing item, check it out to an institutional borrower account, and record shipment.
 
 ## Three principles
 
