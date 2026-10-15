@@ -1,6 +1,6 @@
 [project]
 name = "ill-bridge"
-version = "0.1.0"
+version = "0.1.2"
 description = "Provider-agnostic ILL (fjärrlån) integration service between FOLIO and Libris"
 readme = "README.md"
 requires-python = ">=3.11"

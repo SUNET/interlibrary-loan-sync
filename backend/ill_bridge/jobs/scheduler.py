@@ -36,18 +36,11 @@ async def enqueue_send_email():
     )
 
 
-async def main() -> None:
+
+async def test() -> None:
     # Open Procrastinate for the whole lifetime of the scheduler process
     async with procrastinate_app.open_async():
         scheduler = AsyncIOScheduler()
-
-        # Smoke/health task every minute
-        scheduler.add_job(
-            enqueue_poll_libris_lending,
-            IntervalTrigger(seconds=45),
-            id="poll-libris-lending",
-            replace_existing=True,
-        )
 
         scheduler.add_job(
             enqueue_ping,
@@ -61,6 +54,26 @@ async def main() -> None:
             enqueue_send_email,  # plain coroutine function — no lambda
             CronTrigger(second=0, minute="*/2"),
             id="send-email",
+            replace_existing=True,
+        )
+
+        scheduler.start()
+        print("Scheduler started. Press Ctrl+C to exit.")
+        try:
+            await asyncio.Event().wait()  # run forever
+        finally:
+            scheduler.shutdown(wait=False)
+
+async def main() -> None:
+    # Open Procrastinate for the whole lifetime of the scheduler process
+    async with procrastinate_app.open_async():
+        scheduler = AsyncIOScheduler()
+
+        # Smoke/health task every minute
+        scheduler.add_job(
+            enqueue_poll_libris_lending,
+            IntervalTrigger(seconds=45),
+            id="poll-libris-lending",
             replace_existing=True,
         )
 

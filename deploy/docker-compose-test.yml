@@ -1,0 +1,90 @@
+# docker compose -f docker-compose-test.yml up -d
+services:
+  db:
+    image: postgres:18.6
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_DB: ${POSTGRES_DB:-ill}
+      # Use ICU provider for robust cross-platform Swedish sorting (åäö)
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=sv-SE"
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+
+  migrate:
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    command: python -m ill_bridge.jobs.migrate
+    environment: &backend_env
+      PYTHONPATH: /app
+      ILL_LIBRIS_SIGEL: ${ILL_LIBRIS_SIGEL:-Hal}
+      ILL_LIBRIS_API_KEY: ${ILL_LIBRIS_API_KEY}
+      ILL_LIBRIS_BASE_URL: http://fake-provider:9000/librisfjarrlan/api
+      ILL_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      ILL_ENVIRONMENT: ${ILL_ENVIRONMENT}
+      ILL_API_HOST: 0.0.0.0 # explicit: default is loopback
+      # Pyway migration settings
+      PYWAY_TYPE: postgres
+      PYWAY_DATABASE_HOST: db
+      PYWAY_DATABASE_PORT: 5432
+      PYWAY_DATABASE_NAME: ${POSTGRES_DB:-ill}
+      PYWAY_DATABASE_USERNAME: ${POSTGRES_USER:-admin}
+      PYWAY_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      PYWAY_DATABASE_MIGRATION_DIR: /app/migrations
+      PYWAY_TABLE: public.pyway
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    command: uvicorn --factory ill_bridge.api.main:create_app --host 0.0.0.0 --port 8000
+    environment: *backend_env
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  worker-provider:
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    command: >
+      procrastinate --app=ill_bridge.jobs.worker.app worker --queues=provider,test --concurrency=4
+    environment:
+      <<: *backend_env
+      ILL_SMTP_HOST: "mailpit"
+      ILL_SMTP_PORT: "1025"
+      BTH_LIBRIS_PASSWORD: ${BTH_LIBRIS_PASSWORD}
+      HH_LIBRIS_PASSWORD: ${HH_LIBRIS_PASSWORD}
+      MDU_LIBRIS_PASSWORD: ${MDU_LIBRIS_PASSWORD}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  scheduler:
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    command: python -m ill_bridge.jobs.scheduler
+    environment: *backend_env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  effect-dispatcher:
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    command: python -m ill_bridge.jobs.dispatch_effects
+    environment:
+      <<: *backend_env
+      ILL_FOLIO_SECRET_BTH: ${ILL_FOLIO_SECRET_BTH}
+      ILL_FOLIO_SECRET_HH: ${ILL_FOLIO_SECRET_HH}
+      ILL_FOLIO_SECRET_MDU: ${ILL_FOLIO_SECRET_MDU}
+      # ---
+      ILL_FOLIO_USERNAME_BTH: ${ILL_FOLIO_USERNAME_BTH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_BTH: ${ILL_FOLIO_REALM_BTH:-bth}
+      ILL_FOLIO_TENANT_BTH: ${ILL_FOLIO_TENANT_BTH:-bth}
+      # ---
+      ILL_FOLIO_USERNAME_HH: ${ILL_FOLIO_USERNAME_HH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_HH: ${ILL_FOLIO_REALM_HH:-diku}
+      ILL_FOLIO_TENANT_HH: ${ILL_FOLIO_TENANT_HH:-diku}
+      # ---
+      ILL_FOLIO_USERNAME_MDU: ${ILL_FOLIO_USERNAME_MDU:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_MDU: ${ILL_FOLIO_REALM_MDU:-diku}
+      ILL_FOLIO_TENANT_MDU: ${ILL_FOLIO_TENANT_MDU:-diku}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
