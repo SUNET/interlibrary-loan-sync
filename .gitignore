@@ -58,6 +58,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+**/.nicegui/
 
 # ==========================================
 # IDEs, Editors & OS Files
@@ -106,12 +107,10 @@ docs/_build/
 # Belt and braces: any directory named _raw, wherever it appears.
 **/_raw/
 
-
 deploy/mailpit-data/
 ui/admin/inspiration.html
 ui/**/*.html
 ui/librisportal/inspiration.html
 backend/ill_bridge/test_config.py
-ui/*
-ui
+ui/how-to-run.md
 

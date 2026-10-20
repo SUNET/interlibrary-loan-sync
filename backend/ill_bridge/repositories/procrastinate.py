@@ -39,8 +39,6 @@ class ProcrastinateRepository:
         task_name: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        # TODO: move to logging logger
-        print(f"list_jobs called with status={status}, queue={queue}, task_name={task_name}, limit={limit}")
         stmt = select(
             ProcrastinateJobs.id,
             ProcrastinateJobs.queue_name,
@@ -84,7 +82,7 @@ class ProcrastinateRepository:
         return {key: _value(value) for key, value in row.items()} if row else None
 
     async def get_job_events(
-        self, session: AsyncSession, job_id: int
+        self, session: AsyncSession, job_id: int, limit: int = 100
     ) -> list[dict[str, Any]]:
         stmt = (
             select(
@@ -94,7 +92,8 @@ class ProcrastinateRepository:
                 ProcrastinateEvents.at,
             )
             .where(ProcrastinateEvents.job_id == job_id)
-            .order_by(asc(ProcrastinateEvents.at))
+            .order_by(desc(ProcrastinateEvents.id))
+            .limit(limit)
         )
         return _rows(await session.execute(stmt))
 

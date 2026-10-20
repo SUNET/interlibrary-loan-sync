@@ -14,7 +14,7 @@ services:
       interval: 5s
 
   migrate:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.2
     command: python -m ill_bridge.jobs.migrate
     environment: &backend_env
       PYTHONPATH: /app
@@ -37,7 +37,7 @@ services:
       db: { condition: service_healthy }
 
   api:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.2
     command: uvicorn --factory ill_bridge.api.main:create_app --host 0.0.0.0 --port 8000
     environment: *backend_env
     ports: ["8000:8000"]
@@ -46,7 +46,7 @@ services:
       migrate: { condition: service_completed_successfully }
 
   worker-provider:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.2
     command: >
       procrastinate --app=ill_bridge.jobs.worker.app worker --queues=provider,test --concurrency=4
     environment:
@@ -60,14 +60,14 @@ services:
       migrate: { condition: service_completed_successfully }
 
   scheduler:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.2
     command: python -m ill_bridge.jobs.scheduler
     environment: *backend_env
     depends_on:
       migrate: { condition: service_completed_successfully }
 
   effect-dispatcher:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.1
+    image: ghcr.io/sunet/ill-bridge-backend:0.1.2
     command: python -m ill_bridge.jobs.dispatch_effects
     environment:
       <<: *backend_env

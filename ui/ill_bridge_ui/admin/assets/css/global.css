@@ -1,0 +1,241 @@
+/* =========================================================
+   ILL BRIDGE — ADMIN PORTAL
+   SUNET / NORDIC DESIGN TOKENS
+
+   This stylesheet *complements* Quasar: layout (header, drawer,
+   card borders, table scrolling) is owned by Quasar components,
+   we only supply palette, typography and a few small primitives.
+   ========================================================= */
+
+:root {
+  --color-primary: #CA402B;
+  --color-primary-hover: #B03524;
+  --color-primary-light: #FDF0EE;
+
+  --color-text: #161616;
+  --color-text-muted: #555555;
+  --color-text-light: #777777;
+
+  --color-bg: #FFFFFF;
+  --color-bg-alt: #F4F4F4;
+  --color-border: #E8E8E8;
+
+  --color-success: #2E7D32;
+  --color-warning: #ED6C02;
+  --color-error: #D32F2F;
+  --color-info: #1565C0;
+
+  --font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-full: 9999px;
+}
+
+/* ---------------------------------------------------------
+   BASE
+   --------------------------------------------------------- */
+
+body {
+  margin: 0;
+  background: var(--color-bg-alt);
+  color: var(--color-text);
+  font-family: var(--font-family);
+}
+
+.q-page { background: var(--color-bg-alt); }
+
+/* NiceGUI's base stylesheet makes `.nicegui-content` a flex column with
+   `align-items:flex-start`, 1rem padding and 1rem gap. flex-start shrink-wraps
+   our page column, so reset alignment and padding — spacing is handled by the
+   `.page-content` utility classes instead. */
+.nicegui-content {
+  padding: 0 !important;
+  gap: 0 !important;
+  align-items: stretch !important;
+  width: 100%;
+}
+
+/* ---------------------------------------------------------
+   HEADER
+   --------------------------------------------------------- */
+
+/* NiceGUI puts `padding:1rem; gap:1rem; align-items:flex-start` on
+   `.nicegui-header` and `.nicegui-drawer`. Those are single-class selectors
+   that can beat Tailwind utilities depending on stylesheet order, so reset
+   the structural bits explicitly here rather than relying on `p-0`/`items-center`. */
+.app-header {
+  height: 64px;
+  padding: 0 20px !important;
+  gap: 12px !important;
+  align-items: center !important;
+  background: white !important;
+  color: var(--color-text) !important;
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: none !important;
+}
+.app-header .nav-toggle { color: var(--color-text-muted); }
+
+.app-drawer .q-drawer__content,
+.app-drawer {
+  padding: 0 !important;
+  gap: 0 !important;
+  align-items: stretch !important;
+}
+
+.brand-mark {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary); color: white;
+  font-size: 11px; font-weight: 800;
+}
+
+.lang-switch { width: 62px; font-size: 12px; }
+.lang-switch .q-field__control { min-height: 30px; }
+.lang-switch .q-field__marginal { height: 30px; }
+.lang-switch .q-field__native { padding: 0; text-transform: uppercase; }
+
+/* ---------------------------------------------------------
+   DRAWER / NAV
+   --------------------------------------------------------- */
+
+.q-drawer { border-right: 1px solid var(--color-border) !important; }
+
+.sidebar-label {
+  padding: 16px 12px 8px;
+  color: var(--color-text-light);
+  font-size: 11px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .07em;
+}
+
+/* `ui.link` renders an <a>; make it a full-width row and kill the underline
+   and Quasar's link colour so the active state below can win. */
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  margin: 2px 8px; padding: 8px 12px;
+  border-radius: 10px;
+  color: var(--color-text-muted) !important;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+.nav-item:hover { background: var(--color-bg-alt); color: var(--color-text) !important; }
+.nav-item.active {
+  background: var(--color-primary-light);
+  color: var(--color-primary) !important;
+  font-weight: 700;
+}
+.nav-icon { font-size: 20px; }
+.nav-text { flex: 1; font-size: 14px; white-space: nowrap; }
+.nav-badge {
+  background: var(--color-bg-alt) !important;
+  color: var(--color-text-muted) !important;
+  font-size: 10px; font-weight: 700;
+}
+.nav-item.active .nav-badge {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+/* ---------------------------------------------------------
+   TYPOGRAPHY
+   --------------------------------------------------------- */
+
+.page-title {
+  font-size: clamp(1.75rem, 3vw, 2.4rem);
+  font-weight: 750; line-height: 1.15; letter-spacing: -.025em;
+}
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 11px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.muted { color: var(--color-text-muted); }
+.light { color: var(--color-text-light); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+/* ---------------------------------------------------------
+   CARDS & METRICS
+   --------------------------------------------------------- */
+
+.q-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+/* NiceGUI's `.nicegui-card` adds `gap:1rem` + `padding:1rem`; our cards manage
+   their own spacing so the header sits flush against the table below it. */
+.q-card.nicegui-card { gap: 0; }
+.card-header { border-bottom: 1px solid var(--color-border); }
+
+.metric-card { transition: transform .15s ease, box-shadow .15s ease; }
+.metric-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+.metric-label { color: var(--color-text-muted); font-size: 12px; font-weight: 650; }
+.metric-value { font-size: 1.5rem; font-weight: 780; line-height: 1.2; }
+.metric-meta { color: var(--color-text-light); font-size: 11px; }
+.metric-meta.success { color: var(--color-success); }
+.metric-meta.warning { color: var(--color-warning); }
+.metric-meta.error { color: var(--color-error); }
+
+/* ---------------------------------------------------------
+   STATUS PILL
+   --------------------------------------------------------- */
+
+.status {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  font-size: 11px; font-weight: 700;
+  white-space: nowrap;
+}
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status-running { color: var(--color-info);       background: #eef5fc; }
+.status-success { color: var(--color-success);    background: #edf7ee; }
+.status-warning { color: var(--color-warning);    background: #fff4e8; }
+.status-error   { color: var(--color-error);      background: #fdeeee; }
+.status-neutral { color: var(--color-text-muted); background: var(--color-bg-alt); }
+
+/* ---------------------------------------------------------
+   TABLES
+   Quasar owns layout/scrolling; we only restyle the header row
+   and tighten cell typography.
+   --------------------------------------------------------- */
+
+.q-table__container { box-shadow: none; border-radius: 0; }
+.q-table thead th {
+  background: var(--color-bg-alt);
+  color: var(--color-text-muted);
+  font-size: 10px; font-weight: 750;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.q-table tbody td { font-size: 13px; }
+.q-table tbody tr:hover { background: #fafafa; }
+
+/* ---------------------------------------------------------
+   JOB LIST (overview)
+   --------------------------------------------------------- */
+
+.job-row {
+  display: flex; align-items: center; gap: 16px;
+  width: 100%;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+.job-row:last-child { border-bottom: 0; }
+.job-name { font-size: 14px; font-weight: 700; }
+.job-id {
+  color: var(--color-text-light);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+.job-time { color: var(--color-text-muted); font-size: 12px; }
+
+/* ---------------------------------------------------------
+   RESPONSIVE
+   --------------------------------------------------------- */
+
+@media (max-width: 850px) {
+  .page-content { padding: 16px !important; }
+}

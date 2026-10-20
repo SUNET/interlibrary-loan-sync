@@ -63,6 +63,17 @@ services:
         #   path: ../backend/ill_bridge
         # docker compose -f docker-compose-dev.yml watch
 
+  admin-ui:
+    build: ../ui
+    environment:
+      ILL_UI_ADMIN_API_BASE: http://api:8000/api/v1
+      ILL_UI_ENVIRONMENT: local
+    ports: ["8080:8080"]
+    volumes:
+      - ../ui/ill_bridge_ui:/app/ill_bridge_ui
+    depends_on:
+      api: { condition: service_started }
+
   fake-provider:
     build: ../backend
     command: uvicorn ill_bridge.providers.fake.server_faker:app --host 0.0.0.0 --port 9000

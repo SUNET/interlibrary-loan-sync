@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from ill_bridge.database.models.procrastinate import ProcrastinateJobStatus
 from ill_bridge.database.session import get_db
 from ill_bridge.jobs.worker import app as procrastinate_app
@@ -104,9 +104,13 @@ async def get_job(
 @router.get("/jobs/{job_id}/events")
 async def get_job_events(
     job_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    return await _repo.get_job_events(db, job_id)
+    """Return the latest lifecycle transitions, newest first (not task logs)."""
+    if await _repo.get_job(db, job_id) is None:
+        raise HTTPException(404, "Job not found")
+    return await _repo.get_job_events(db, job_id, limit=limit)
 
 
 # ---------- Operations ----------------------------------------------------

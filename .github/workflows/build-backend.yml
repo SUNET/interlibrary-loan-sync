@@ -1,20 +1,22 @@
-name: Build backend Docker image
+name: Build backend and UI Docker images
 
 on:
   push:
     branches: [main]
     paths:
       - backend/**
+      - ui/**
+      - .gitignore
       - .github/workflows/build-backend.yml
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 0.1.0). Empty uses backend/pyproject.toml.'
+        description: 'Release version for both images (e.g. 0.1.0). Empty uses backend/pyproject.toml.'
         type: string
         required: false
         default: ''
       publish_release:
-        description: 'Push to GHCR, create a GitHub Release, and attach the image archive.'
+        description: 'Push both images to GHCR, create a GitHub Release, and attach their archives.'
         type: boolean
         required: false
         default: false
@@ -31,7 +33,10 @@ jobs:
     outputs:
       version: ${{ steps.metadata.outputs.version }}
       image: ${{ steps.metadata.outputs.image }}
+      ui_image: ${{ steps.metadata.outputs.ui_image }}
       artifact: ${{ steps.metadata.outputs.artifact }}
+      backend_archive: ${{ steps.metadata.outputs.backend_archive }}
+      ui_archive: ${{ steps.metadata.outputs.ui_archive }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -60,10 +65,14 @@ jobs:
               raise SystemExit("Resulting version exceeds the Docker tag length limit.")
           image_name = "ghcr.io/sunet/ill-bridge-backend"
           image = f"{image_name}:{version}"
+          ui_image = f"ghcr.io/sunet/ill-bridge-ui:{version}"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"version={version}\n")
               output.write(f"image={image}\n")
-              output.write(f"artifact=ill-bridge-backend-{version}-linux-amd64\n")
+              output.write(f"ui_image={ui_image}\n")
+              output.write(f"artifact=ill-bridge-images-{version}-linux-amd64\n")
+              output.write(f"backend_archive=ill-bridge-backend-{version}-linux-amd64\n")
+              output.write(f"ui_archive=ill-bridge-ui-{version}-linux-amd64\n")
           PY
 
       - name: Set up Docker Buildx
@@ -90,19 +99,39 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
-      - name: Export image and checksum
+      - name: Build UI image (push only for release)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ui
+          file: ./ui/Dockerfile
+          platforms: linux/amd64
+          load: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
+          push: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
+          tags: ${{ steps.metadata.outputs.ui_image }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
+          cache-from: type=gha,scope=ui
+          cache-to: type=gha,scope=ui,mode=max
+
+      - name: Export images and checksums
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
         env:
           IMAGE: ${{ steps.metadata.outputs.image }}
-          ARTIFACT: ${{ steps.metadata.outputs.artifact }}
+          UI_IMAGE: ${{ steps.metadata.outputs.ui_image }}
+          BACKEND_ARCHIVE: ${{ steps.metadata.outputs.backend_archive }}
+          UI_ARCHIVE: ${{ steps.metadata.outputs.ui_archive }}
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          docker save "$IMAGE" | gzip > "artifacts/$ARTIFACT.tar.gz"
-          (cd artifacts && sha256sum "$ARTIFACT.tar.gz" > "$ARTIFACT.tar.gz.sha256")
+          docker save "$IMAGE" | gzip > "artifacts/$BACKEND_ARCHIVE.tar.gz"
+          docker save "$UI_IMAGE" | gzip > "artifacts/$UI_ARCHIVE.tar.gz"
+          (cd artifacts && sha256sum "$BACKEND_ARCHIVE.tar.gz" > "$BACKEND_ARCHIVE.tar.gz.sha256")
+          (cd artifacts && sha256sum "$UI_ARCHIVE.tar.gz" > "$UI_ARCHIVE.tar.gz.sha256")
 
       - name: Upload build artifacts
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release == true }}
@@ -122,7 +151,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download image archive and checksum
+      - name: Download image archives and checksums
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build.outputs.artifact }}
@@ -134,29 +163,37 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
           IMAGE: ${{ needs.build.outputs.image }}
-          ARTIFACT: ${{ needs.build.outputs.artifact }}
+          UI_IMAGE: ${{ needs.build.outputs.ui_image }}
+          BACKEND_ARCHIVE: ${{ needs.build.outputs.backend_archive }}
+          UI_ARCHIVE: ${{ needs.build.outputs.ui_archive }}
         run: |
           set -euo pipefail
           cat > release-notes.md <<EOF
-          Backend Docker image built from backend/Dockerfile for linux/amd64.
+          Backend and UI Docker images built from backend/Dockerfile and ui/Dockerfile for linux/amd64.
 
           Source commit: $GITHUB_SHA
-          Image: $IMAGE
+          Backend image: $IMAGE
+          UI image: $UI_IMAGE (runs the admin portal by default)
 
-          Pull the image from GitHub Container Registry:
+          Pull both images from GitHub Container Registry:
 
               docker pull $IMAGE
+              docker pull $UI_IMAGE
 
-          Alternatively, download both assets, then verify and load the image:
+          Alternatively, download the archives and checksums, then verify and load them:
 
-              sha256sum -c $ARTIFACT.tar.gz.sha256
-              docker load --input $ARTIFACT.tar.gz
+              sha256sum -c $BACKEND_ARCHIVE.tar.gz.sha256
+              sha256sum -c $UI_ARCHIVE.tar.gz.sha256
+              docker load --input $BACKEND_ARCHIVE.tar.gz
+              docker load --input $UI_ARCHIVE.tar.gz
 
           Supply runtime configuration separately; no deployment secrets are included.
           EOF
           gh release create "ill-bridge-v$VERSION" \
-            "artifacts/$ARTIFACT.tar.gz" \
-            "artifacts/$ARTIFACT.tar.gz.sha256" \
+            "artifacts/$BACKEND_ARCHIVE.tar.gz" \
+            "artifacts/$BACKEND_ARCHIVE.tar.gz.sha256" \
+            "artifacts/$UI_ARCHIVE.tar.gz" \
+            "artifacts/$UI_ARCHIVE.tar.gz.sha256" \
             --target "$GITHUB_SHA" \
             --title "ILL Bridge $VERSION" \
             --notes-file release-notes.md \
