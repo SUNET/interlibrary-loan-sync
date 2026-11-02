@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,16 +28,22 @@ from ill_bridge.providers.loader import MappingLoader
 from ill_bridge.providers.registry import ProviderRegistry
 from ill_bridge.repositories.provider_polling import ProviderPollingRepository
 
-POLL_INTERVAL_SECONDS = 45.0
-DAYS = 1
+POLL_INTERVAL_SECONDS = float(os.environ.get("POLL_INTERVAL_SECONDS", "45.0"))
+POLL_LOOKBACK_DAYS = int(os.environ.get("POLL_LOOKBACK_DAYS", "1"))
 LOG_PATH = Path("logs/libris_loop.log")
 logger = logging.getLogger(__name__)
+
+
+def _resolve_log_level() -> int:
+    level_name = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    level = logging.getLevelNamesMapping().get(level_name)
+    return level if level is not None else logging.INFO
 
 
 def configure_logging() -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
-        level=logging.INFO,
+        level=_resolve_log_level(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
@@ -48,7 +55,7 @@ def configure_logging() -> None:
 
 
 async def wait_for_next_poll(duration: float = POLL_INTERVAL_SECONDS) -> None:
-    logger.info("next poll begins in %.0f seconds", duration)
+    logger.debug("next poll begins in %.0f seconds", duration)
     await asyncio.sleep(duration)
 
 
@@ -82,8 +89,8 @@ async def poll_enabled_providers() -> None:
                 mapping_loader=MappingLoader,
             )
             provider_refs = await repository.list_enabled_providers()
-            logger.info("polling %d enabled provider(s)", len(provider_refs))
-            logger.info("polling enabled providers: %s", provider_refs)
+            logger.debug("polling %d enabled provider(s)", len(provider_refs))
+            logger.debug("polling enabled providers: %s", provider_refs)
 
             for provider_ref in provider_refs:
                 # tenant: Tenants = await repository.get_tenant(provider_ref.tenant_id)
@@ -93,7 +100,7 @@ async def poll_enabled_providers() -> None:
                     )
                 )
                 adapter: IllProvider = registry.create(provider)
-                logger.info(
+                logger.debug(
                     "feeds: %s",
                     registry.feeds_for(provider.adapter_key, ILLDirection.LENDING),
                 )
@@ -102,27 +109,27 @@ async def poll_enabled_providers() -> None:
                     provider.adapter_key,
                     ILLDirection.LENDING,
                     from_archive=True,
-                    days=DAYS,
+                    days=POLL_LOOKBACK_DAYS,
                 ):
                     page: ProviderRequests = await adapter.fetch_requests(feed=feed)
-                    logger.info(
+                    logger.debug(
                         "===> fetched %d requests from %s/%s",
                         page.count,
                         provider.display_name,
                         feed,
                     )
-                    logger.info("processing incoming feed: %s \nreq: %s", feed, page)
+                    logger.debug("processing incoming feed: %s \nreq: %s", feed, page)
                     new_events = 0
                     for record in page.requests:
                         # if feed == LibrisFeed.INCOMING.value and page.count > 0:
-                        logger.info("processing incoming record: %s", record)
+                        logger.debug("processing incoming record: %s", record)
 
                         event_key = (
                             f"{record.get('lf_number')}:{record.get('last_modified')}"
                             if record.get("last_modified")
                             else record.get("lf_number")
                         )
-                        logger.info("===> event_key: %s", event_key)
+                        logger.debug("===> event_key: %s", event_key)
                         if not event_key:
                             logger.warning(
                                 "skipping record without an event key from %s/%s",
@@ -144,11 +151,11 @@ async def poll_enabled_providers() -> None:
                         # failed/incomplete syncs and effects can be retried.
                         if inserted:
                             new_events += 1
-                            logger.info(
+                            logger.debug(
                                 "recorded new raw provider event: %s", event_key
                             )
                         else:
-                            logger.info(
+                            logger.debug(
                                 "raw provider event already recorded, continuing processing: %s",
                                 event_key,
                             )
@@ -157,11 +164,11 @@ async def poll_enabled_providers() -> None:
                             record, observed_at=datetime.now(timezone.utc)
                         )
 
-                        logger.info(
+                        logger.debug(
                             "===> normalized observation: %s",
                             observation,
                         )
-                        logger.info(
+                        logger.debug(
                             "===> receiving_library: %s",
                             record.get("receiving_library"),
                         )
@@ -176,7 +183,7 @@ async def poll_enabled_providers() -> None:
                             if current and current.workflow_state
                             else None
                         )
-                        logger.info(
+                        logger.debug(
                             "===> current: %s, from_state: %s", current, from_state
                         )
 
@@ -192,12 +199,12 @@ async def poll_enabled_providers() -> None:
                                 feed,
                                 new_state.value,
                             )
-                            logger.info(
+                            logger.debug(
                                 "===> new_state: %s, processing_state: %s",
                                 new_state,
                                 processing_state,
                             )
-                            logger.info(
+                            logger.debug(
                                 "EFFECTS ===> (observation, from_state, new_state): (%s,%s,%s)",
                                 observation.direction,
                                 from_state,
@@ -227,7 +234,7 @@ async def poll_enabled_providers() -> None:
                                     raise InvalidWorkflowTransition(
                                         "missing current or observed workflow state"
                                     )
-                                logger.info(
+                                logger.debug(
                                     "===> Transitioning from %s to %s",
                                     from_state,
                                     observation.mapped_state,
@@ -262,7 +269,7 @@ async def poll_enabled_providers() -> None:
                                 observation.provider_status_code,
                             )
 
-                        logger.info(
+                        logger.debug(
                             "===>SYNC Applying effects for observation %s from %s to %s with processing state %s",
                             observation.external_request_id,
                             from_state,

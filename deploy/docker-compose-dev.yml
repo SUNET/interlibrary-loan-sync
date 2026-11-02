@@ -26,6 +26,9 @@ services:
       ILL_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       ILL_ENVIRONMENT: ${ILL_ENVIRONMENT}
       ILL_API_HOST: 0.0.0.0 # explicit: default is loopback
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-45.0}
+      POLL_LOOKBACK_DAYS: ${POLL_LOOKBACK_DAYS:-1}
       # Pyway migration settings
       PYWAY_TYPE: postgres
       PYWAY_DATABASE_HOST: db

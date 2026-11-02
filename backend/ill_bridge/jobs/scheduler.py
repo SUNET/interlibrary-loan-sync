@@ -6,12 +6,12 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from faker import Faker
 
-from ill_bridge.jobs.worker import app as procrastinate_app
 from ill_bridge.jobs.tasks import (
     ping,
     poll_libris_lending,
     send_email,
 )
+from ill_bridge.jobs.worker import app as procrastinate_app
 
 fake = Faker("sv_SE")
 seq = 42

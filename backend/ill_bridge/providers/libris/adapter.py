@@ -65,7 +65,7 @@ class LibrisAdapter:
         end_date = datetime.now(tz).strftime("%Y-%m-%d")
         enpoints = (
             f"incoming_archive?start_date={start_date}&end_date={end_date}",
-            f"outgoing_archive?start_date={start_date}&end_date={end_date}",
+            f"outgoing?start_date={start_date}&end_date={end_date}",
         )
         if direction == ILLDirection.LENDING:
             return enpoints[:1]
