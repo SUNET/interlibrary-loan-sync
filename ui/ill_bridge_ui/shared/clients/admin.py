@@ -34,11 +34,24 @@ class AdminApiError(RuntimeError):
 class AdminApiClient:
     """Thin async wrapper over the ``/admin/*`` REST endpoints."""
 
-    def __init__(self, base_url: str, *, timeout: float = 5.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        username: str | None = None,
+        password: str | None = None,
+        timeout: float = 5.0,
+    ) -> None:
         # AsyncClient keeps a connection pool; one instance per process is
         # correct. Do not create per-request.
+        auth = (
+            httpx2.BasicAuth(username, password)
+            if username is not None and password is not None
+            else None
+        )
         self._client = httpx2.AsyncClient(
             base_url=base_url.rstrip("/"),
+            auth=auth,
             timeout=timeout,
         )
 

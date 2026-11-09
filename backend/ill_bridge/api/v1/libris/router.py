@@ -1,74 +1,46 @@
-"""Admin router -- Procrastinate control panel.
-
-Prefix ``/admin`` lives ONLY on this router. Child routers must not set
-their own prefix; that was the bug in the old file (``/admin/admin/jobs``).
-"""
+"""Libris router -- unifies resource sub-routers under ``/libris``."""
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends
-from ill_bridge.database.session import get_db
+from ill_bridge.api.v1.libris.effect_queue import router as effect_queue_router
+from ill_bridge.api.v1.libris.ill_requests import router as ill_requests_router
+from ill_bridge.api.v1.libris.providers import router as providers_router
+from ill_bridge.api.v1.libris.raw_provider_requests import (
+    router as raw_provider_requests_router,
+)
+from ill_bridge.api.v1.libris.request_parties import (
+    router as request_parties_router,
+)
+from ill_bridge.api.v1.libris.state_audit_logs import (
+    router as state_audit_logs_router,
+)
+from ill_bridge.api.v1.libris.tenants import router as tenants_router
 from ill_bridge.dependencies.auth import require_admin
-from ill_bridge.repositories.provider import ProviderRepository
-from sqlalchemy.ext.asyncio import AsyncSession
 
-# from ill_bridge.api.v1.admin.jobs import router as jobs_router
 router = APIRouter(
     prefix="/libris",
     tags=["libris"],
     dependencies=[Depends(require_admin)],
 )
-# router.include_router(jobs_router)
 
 
 @router.get("/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     """Health check endpoint for the Libris adapter."""
     return {"status": "ok"}
 
 
 @router.get("/config")
-async def get_config():
+async def get_config() -> dict[str, str]:
     """Get the configuration for the Libris adapter."""
     return {"config": "This is a placeholder for the Libris adapter configuration."}
 
 
-@router.get("/providers")
-async def get_provider(
-    session: AsyncSession = Depends(get_db),
-):
-    repository = ProviderRepository(session)
-
-    providers = await repository.list()
-
-    return [
-        {
-            "id": str(provider.id),
-            "name": provider.display_name,
-            "adapter_key": provider.adapter_key,
-            "enabled": provider.enabled,
-        }
-        for provider in providers
-    ]
-
-
-@router.get("/providers/{provider_id}")
-async def get_provider_by_id(
-    provider_id: UUID,
-    session: AsyncSession = Depends(get_db),
-):
-    repository = ProviderRepository(session)
-
-    provider = await repository.get(provider_id)
-
-    if provider is None:
-        return {"error": "Provider not found"}
-
-    return {
-        "id": str(provider.id),
-        "name": provider.display_name,
-        "adapter_key": provider.adapter_key,
-        "enabled": provider.enabled,
-    }
+router.include_router(tenants_router)
+router.include_router(providers_router)
+router.include_router(raw_provider_requests_router)
+router.include_router(ill_requests_router)
+router.include_router(effect_queue_router)
+router.include_router(request_parties_router)
+router.include_router(state_audit_logs_router)

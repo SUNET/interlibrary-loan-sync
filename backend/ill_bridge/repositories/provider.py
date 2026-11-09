@@ -88,6 +88,7 @@ class ProviderRepository:
         """Persist a new provider record."""
         self._session.add(provider)
         await self._session.flush()
+        await self._session.refresh(provider)
         return provider
 
     async def delete(self, provider: Providers) -> None:

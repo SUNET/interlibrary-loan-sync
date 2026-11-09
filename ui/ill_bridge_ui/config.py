@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +18,7 @@ class UiSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ILL_UI_",
         env_file=".env",
+        populate_by_name=True,
         extra="ignore",
     )
 
@@ -26,6 +27,26 @@ class UiSettings(BaseSettings):
     admin_api_base: str = Field(
         default="http://localhost:8000/api/v1",
         description="Base URL for the ill-bridge Admin REST API.",
+    )
+    api_admin_username: str | None = Field(
+        default="admin",
+        validation_alias=AliasChoices(
+            "ILL_UI_API_ADMIN_USERNAME",
+            "ILL_API_ADMIN_USERNAME",
+            "API_ADMIN_USERNAME",
+            "api_admin_username",
+        ),
+        description="HTTP Basic username for the ill-bridge Admin REST API.",
+    )
+    api_admin_password: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_UI_API_ADMIN_PASSWORD",
+            "ILL_API_ADMIN_PASSWORD",
+            "API_ADMIN_PASSWORD",
+            "api_admin_password",
+        ),
+        description="HTTP Basic password for the ill-bridge Admin REST API.",
     )
 
     # HTTP surface for this UI process.

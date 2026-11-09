@@ -67,7 +67,16 @@ def _configure_assets() -> None:
 def _wire_client() -> None:
     """Create the singleton :class:`AdminApiClient` and close it on shutdown."""
     settings = get_settings()
-    client = AdminApiClient(settings.admin_api_base)
+    password = (
+        settings.api_admin_password.get_secret_value()
+        if settings.api_admin_password is not None
+        else None
+    )
+    client = AdminApiClient(
+        settings.admin_api_base,
+        username=settings.api_admin_username,
+        password=password,
+    )
     deps.bootstrap(client)
 
     @nicegui_app.on_shutdown

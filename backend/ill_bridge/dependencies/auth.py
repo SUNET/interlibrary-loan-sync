@@ -1,22 +1,21 @@
-from dataclasses import dataclass
+import secrets
+from collections.abc import Callable
+from typing import Annotated
 from uuid import UUID
 
 import jwt
-from collections.abc import Callable
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import (
+    HTTPAuthorizationCredentials,
+    HTTPBasic,
+    HTTPBasicCredentials,
+    HTTPBearer,
+)
 from ill_bridge.common.models import ApiClientIdentity
 from ill_bridge.config import Settings, get_settings
 from jwt import PyJWKClient
 from jwt.exceptions import InvalidTokenError, PyJWKClientError
-import secrets
-from typing import Annotated
-
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pwdlib import PasswordHash
-
-from ill_bridge.config import get_settings
 
 settings: Settings = get_settings(strict_env=False)
 
