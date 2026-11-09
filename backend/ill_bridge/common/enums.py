@@ -1,13 +1,48 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
+class EffectQueueRow(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    id: UUID
+    tenant_id: UUID
+    subject_id: UUID
+    subject_type: IllSubjectType
+
+    kind: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    effect_key: str
+    attempts: int = 0
+    fence: int
+
+
+class IllSubjectType(StrEnum):
+    BORROWING_ORDER = "BORROWING_ORDER"
+    ILL_REQUEST = "ILL_REQUEST"
+
+
+class Outcome(StrEnum):
+    CONFIRMED = "CONFIRMED"  # it definitely happened
+    REFUSED = "REFUSED"  # the target said no, permanently
+    TRANSIENT = "TRANSIENT"  # retry is safe and expected
+    UNKNOWN = "UNKNOWN"  # we do not know whether it happened
+    
 class ProviderCommand(StrEnum):
     PROVIDER_ACCEPT = "PROVIDER_ACCEPT"
     PROVIDER_REJECT = "PROVIDER_REJECT"
     PROVIDER_CANCEL = "PROVIDER_CANCEL"
     PROVIDER_REVIEW_NEW_REQUEST = "PROVIDER_REVIEW_NEW_REQUEST"
+
 
 class EvidenceSource(StrEnum):
     PROVIDER = "PROVIDER"  # Libris said so
@@ -90,4 +125,3 @@ class LibrisFeed(StrEnum):
     def all(cls) -> list[str]:
         # [feed.value for feed in LibrisFeed] = [feed.value for feed in cls]
         return cls.lending() + cls.borrowing()
-        

@@ -85,10 +85,79 @@ class Settings(BaseSettings):
     api_port: int = 8000
     database_url: str | None = None
     redis_url: str | None = None
+    api_admin_username: str | None = Field(
+        default="admin",
+        validation_alias=AliasChoices(
+            "ILL_API_ADMIN_USERNAME",
+            "API_ADMIN_USERNAME",
+            "api_admin_username",
+        ),
+    )
+    api_admin_password: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_API_ADMIN_PASSWORD",
+            "API_ADMIN_PASSWORD",
+            "api_admin_password",
+        ),
+    )
+    api_admin_password_hashed: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_API_ADMIN_PASSWORD_HASHED",
+            "API_ADMIN_PASSWORD_HASHED",
+            "api_admin_password_hashed",
+        ),
+    )
 
     # --- SMTP ---------------------------------------------------------
     smtp_host: str = "mailpit"
     smtp_port: int = 1025
+
+    # --- Keycloak (admin provisioning) -------------------------------
+    # Aliases accept the bare KEYCLOAK_* names used by the ops scripts as
+    # well as the ILL_-prefixed form.
+    keycloak_url: str = Field(
+        default="http://localhost:8081",
+        validation_alias=AliasChoices("ILL_KEYCLOAK_URL", "KEYCLOAK_URL"),
+    )
+    keycloak_realm: str = Field(
+        default="ill-bridge",
+        validation_alias=AliasChoices("ILL_KEYCLOAK_REALM", "KEYCLOAK_REALM"),
+    )
+    keycloak_admin_realm: str = Field(
+        default="ill-bridge",
+        validation_alias=AliasChoices(
+            "ILL_KEYCLOAK_ADMIN_REALM", "KEYCLOAK_ADMIN_REALM"
+        ),
+    )
+    keycloak_admin_client_id: str | None = Field(
+        default="ill-bridge-provisioner",
+        validation_alias=AliasChoices(
+            "ILL_KEYCLOAK_ADMIN_CLIENT_ID", "KEYCLOAK_ADMIN_CLIENT_ID"
+        ),
+    )
+    # SecretStr keeps the client secret out of repr(), tracebacks and logs.
+    keycloak_admin_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_KEYCLOAK_ADMIN_CLIENT_SECRET", "KEYCLOAK_ADMIN_CLIENT_SECRET"
+        ),
+    )
+    keycloak_api_audience: str = Field(
+        default="ill-bridge-api",
+        validation_alias=AliasChoices(
+            "ILL_KEYCLOAK_API_AUDIENCE", "KEYCLOAK_API_AUDIENCE"
+        ),
+    )
+    keycloak_timeout: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices("ILL_KEYCLOAK_TIMEOUT", "KEYCLOAK_TIMEOUT"),
+    )
+    keycloak_verify_ssl: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ILL_KEYCLOAK_VERIFY_SSL", "KEYCLOAK_VERIFY_SSL"),
+    )
 
     # --- Environment -----------------------------------------------------
     environment: Environment = "local"
@@ -205,3 +274,13 @@ def get_settings(*, strict_env: bool = True) -> Settings:
                 f"unrecognised environment variables (typo?): {', '.join(unknown)}"
             )
     return Settings()
+
+
+if __name__ == "__main__":
+    settings = get_settings(strict_env=False)
+    print(settings.model_dump_json(indent=2, exclude_none=True))
+    print("Environment variables read by Settings:", _accepted_env_names())
+    unknown = check_for_unknown_env_vars()
+    if unknown:
+        print("Unrecognised environment variables (typo?):", unknown)
+    print(settings.database_url)

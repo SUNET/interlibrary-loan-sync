@@ -50,7 +50,7 @@ def async_dsn(dsn: str) -> str:
     return dsn
 
 
-def make_engine(settings: Settings) -> AsyncEngine:
+def make_engine_(settings: Settings) -> AsyncEngine:
     if not settings.database_url:
         raise RuntimeError(
             "database_url is not configured; admin endpoints require it."
@@ -61,6 +61,23 @@ def make_engine(settings: Settings) -> AsyncEngine:
     )
 
 
+def make_engine(settings: Settings) -> AsyncEngine:
+    if not settings.database_url:
+        raise RuntimeError(
+            "database_url is not configured; admin endpoints require it."
+        )
+
+    database_url = settings.database_url.replace(
+        "postgresql://",
+        "postgresql+asyncpg://",
+        1,
+    )
+
+    return create_async_engine(
+        async_dsn(database_url),
+        pool_pre_ping=True,
+    )
+    
 def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ill_bridge.api.v1.router import api_router
 from ill_bridge.config import Settings, get_settings
 from ill_bridge.database.session import make_engine, make_sessionmaker, ping_db
-from ill_bridge.jobs.worker import app as procrastinate_app
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,11 @@ async def lifespan(app: FastAPI):
     Manage application lifecycle - startup and shutdown.
     Shutdown order matters: stop producers before closing what they use.
     """
-    settings = get_settings(strict_env=False)  # fail fast on missing env vars, .env, or .toml
+    from ill_bridge.jobs.worker import app as procrastinate_app
+
+    settings = get_settings(
+        strict_env=False
+    )  # fail fast on missing env vars, .env, or .toml
     logger.info(
         "starting",
         extra={
@@ -59,9 +63,7 @@ async def lifespan(app: FastAPI):
             exc,
         )
         await engine.dispose()  # do not leak the pool on failed startup
-        raise RuntimeError(
-            "Database unreachable at startup; see log above."
-        ) from exc
+        raise RuntimeError("Database unreachable at startup; see log above.") from exc
 
     app.state.engine = engine
     app.state.sessionmaker = make_sessionmaker(engine)
@@ -107,20 +109,21 @@ def _register_health_routes(app: FastAPI) -> None:
         # Database: SELECT 1 through the same pool the request path uses.
         # A short timeout keeps a hung Postgres from turning readiness into
         # a slow-lorris on the kubelet.
-        engine = getattr(request.app.state, "engine", None)
-        if engine is None:
-            checks["database"] = "unwired: lifespan did not set app.state.engine"
-        else:
-            try:
-                await ping_db(engine, timeout_seconds=2.0)
-                checks["database"] = "ok"
-            except (SQLAlchemyError, TimeoutError, OSError) as exc:
-                # Log the exception class + message; never the DSN.
-                logger.warning(
-                    "readiness: database check failed: %s",
-                    exc.__class__.__name__,
-                )
-                checks["database"] = f"error: {exc.__class__.__name__}"
+        if settings.database_url:
+            engine = getattr(request.app.state, "engine", None)
+            if engine is None:
+                checks["database"] = "unwired: lifespan did not set app.state.engine"
+            else:
+                try:
+                    await ping_db(engine, timeout_seconds=2.0)
+                    checks["database"] = "ok"
+                except (SQLAlchemyError, TimeoutError, OSError) as exc:
+                    # Log the exception class + message; never the DSN.
+                    logger.warning(
+                        "readiness: database check failed: %s",
+                        exc.__class__.__name__,
+                    )
+                    checks["database"] = f"error: {exc.__class__.__name__}"
 
         if settings.redis_url:
             checks["redis"] = "unverified: check not implemented"
@@ -139,7 +142,7 @@ def _register_health_routes(app: FastAPI) -> None:
 def create_app() -> FastAPI:
     # TODO: Convert to true in production: uvicorn --factory ill_bridge.api.main:create_app
     #   will then fail fast on missing env vars, .env, or .toml
-    settings = get_settings(strict_env=False) 
+    settings = get_settings(strict_env=False)
 
     app = FastAPI(
         root_path=settings.api_root_path,
@@ -163,6 +166,11 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix="/api/v1")
     _register_health_routes(app)
+    
+    @app.get("/")
+    async def root() -> dict[str, str]:
+        """Root endpoint for the API."""
+        return {"message": "Welcome to the ILL Bridge API!"}
 
     return app
 
@@ -173,7 +181,9 @@ if __name__ == "__main__":
     import uvicorn
 
     try:
-        _settings = get_settings(strict_env=False)  # fail fast on missing env vars, .env, or .toml
+        _settings = get_settings(
+            strict_env=False
+        )  # fail fast on missing env vars, .env, or .toml
         uvicorn.run(
             # Import string + factory=True so --reload can re-import the module.
             "ill_bridge.api.main:create_app",

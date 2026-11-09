@@ -1,3 +1,5 @@
+from ill_bridge.database.models.borrowing_order_comments import BorrowingOrderComments
+from ill_bridge.database.models.borrowing_orders import BorrowingOrders
 from ill_bridge.database.models.effect_queue import EffectQueue
 from ill_bridge.database.models.ill_requests import IllRequests
 from ill_bridge.database.models.providers import Providers
@@ -8,6 +10,8 @@ from ill_bridge.database.models.sync_operations import SyncOperations
 from ill_bridge.database.models.tenants import Tenants
 
 __all__ = [
+    "BorrowingOrderComments",
+    "BorrowingOrders",
     "EffectQueue",
     "IllRequests",
     "Providers",

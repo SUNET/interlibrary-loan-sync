@@ -5,12 +5,9 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
-    and_,
     BigInteger,
-    Boolean,
     CheckConstraint,
     DateTime,
-    Enum,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -21,19 +18,17 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ill_bridge.common.enums import AdapterKeyType
 from ill_bridge.database.base import Base
 
 
 class EffectQueue(Base):
     __tablename__ = "effect_queue"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["tenant_id", "ill_request_id"],
-            ["ill_requests.tenant_id", "ill_requests.id"],
-            name="effect_queue_tenant_id_ill_request_id_fkey",
+        CheckConstraint(
+            "subject_type = ANY (ARRAY['ILL_REQUEST'::text, 'BORROWING_ORDER'::text])",
+            name="effect_queue_subject_type_check",
         ),
         ForeignKeyConstraint(
             ["tenant_id"], ["tenants.id"], name="effect_queue_tenant_id_fkey"
@@ -54,6 +49,12 @@ class EffectQueue(Base):
             "available_at",
             postgresql_where="(published_at IS NULL)",
         ),
+        Index(
+            "effect_queue_subject_idx",
+            "tenant_id",
+            "subject_type",
+            "subject_id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -70,21 +71,17 @@ class EffectQueue(Base):
     fence: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
     )
-    ill_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid)
+    # Polymorphic subject: subject_type says which table subject_id points into.
+    #   'ILL_REQUEST'     -> ill_requests.id
+    #   'BORROWING_ORDER' -> borrowing_orders.id
+    # A single column cannot carry a foreign key into two tables, so there is
+    # no DB-level FK here: the dispatcher loads the subject by type and keeps a
+    # row queued (NEEDS_REVIEW) if its subject is missing.
+    subject_type: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     published_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True))
     claimed_by: Mapped[Optional[str]] = mapped_column(Text)
     claimed_until: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True))
     last_error: Mapped[Optional[str]] = mapped_column(Text)
 
-    ill_requests: Mapped[Optional["IllRequests"]] = relationship(
-        "IllRequests",
-        primaryjoin="""and_(
-            IllRequests.id == foreign(EffectQueue.ill_request_id),
-            IllRequests.tenant_id == EffectQueue.tenant_id,
-        )""",
-        foreign_keys="[EffectQueue.ill_request_id]",
-        back_populates="effect_queue",
-    )
     tenant: Mapped["Tenants"] = relationship("Tenants", back_populates="effect_queue")
-
-

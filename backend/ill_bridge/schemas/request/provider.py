@@ -1,4 +1,3 @@
-from dataclasses import Field
 from datetime import datetime
 from uuid import UUID
 from ill_bridge.common.enums import AdapterKeyType
@@ -35,6 +34,8 @@ class ProviderRead(BaseModel):
 
 
 class ProviderCreate(BaseModel):
+    tenant_id: UUID
+
     adapter_key: AdapterKeyType
 
     account_key: str
@@ -45,6 +46,9 @@ class ProviderCreate(BaseModel):
 
     base_url: str
     secret_ref: str
+
+    enabled: bool = False
+    writes_enabled: bool = False
 
     mapping_version: str
 

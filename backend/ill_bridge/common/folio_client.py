@@ -198,14 +198,32 @@ class FolioApiClient:
         await self.close()
 
 
+def get_defaults():
+    tenant = os.getenv("ILL_FOLIO_TENANT", None)
+    realm = os.getenv("ILL_FOLIO_TENANT_REALM", None)
+    username = os.getenv("ILL_FOLIO_TENANT_USERNAME", None)
+    secret = os.getenv("ILL_FOLIO_TENANT_SECRET", None)
+    return tenant, realm, username, secret
+
+
 def get_folio_client(tenant_key: str | None = None) -> FolioApiClient:
+    # Get defaults
+    default_tenant, default_realm, default_username, default_secret = get_defaults()
+    # ---
     environment = os.getenv("ILL_ENVIRONMENT", "test")
     library_tenant = tenant_key or os.getenv("ILL_TENANT_NAME", "bth")
-    folio_tenant = os.getenv(f"ILL_FOLIO_TENANT_{library_tenant.upper()}", "diku")
-    folio_realm = os.getenv(f"ILL_FOLIO_REALM_{library_tenant.upper()}", "diku")
+    folio_tenant = os.getenv(
+        f"ILL_FOLIO_TENANT_{library_tenant.upper()}", default_tenant
+    )
+    folio_realm = os.getenv(f"ILL_FOLIO_REALM_{library_tenant.upper()}", default_realm)
+
     client = FolioApiClient(
-        username=os.getenv(f"ILL_FOLIO_USERNAME_{library_tenant.upper()}"),
-        secret=os.getenv(f"ILL_FOLIO_SECRET_{library_tenant.upper()}"),
+        username=os.getenv(
+            f"ILL_FOLIO_TENANT_USERNAME_{library_tenant.upper()}", default_username
+        ),
+        secret=os.getenv(
+            f"ILL_FOLIO_TENANT_SECRET_{library_tenant.upper()}", default_secret
+        ),
         auth_base_url=(
             f"https://auth.{library_tenant.lower()}-{environment}.bibliotek.sunet.se"
         ),
@@ -222,6 +240,8 @@ def get_folio_client(tenant_key: str | None = None) -> FolioApiClient:
     print(f"===> Auth base URL: {client.auth_base_url}")
     print(f"===> API base URL: {client.api_base_url}")
     return client
+
+
 async def api_get(
     client,
     endpoint: str,
@@ -274,7 +294,7 @@ async def create_folio_requesting_library(
     existing_response.raise_for_status()
     existing_users = existing_response.json().get("users", [])
     if existing_users:
-        response =  {
+        response = {
             "id": existing_users[0].get("id"),
             "status_code": existing_response.status_code,
             "text": existing_response.text,

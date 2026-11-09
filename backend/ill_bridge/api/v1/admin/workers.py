@@ -4,19 +4,16 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ill_bridge.database.session import get_db
-from ill_bridge.repositories.procrastinate import ProcrastinateRepository
+from ill_bridge.dependencies.jobs import get_procrastinate_service
+from ill_bridge.services.procrastinate import ProcrastinateService
 
 router = APIRouter()
-
-_repo = ProcrastinateRepository()
 
 
 @router.get("/workers")
 async def list_workers(
-    db: AsyncSession = Depends(get_db),
+    service: ProcrastinateService = Depends(get_procrastinate_service),
 ) -> list[dict[str, Any]]:
     """Workers currently known to Procrastinate.
 
@@ -24,4 +21,4 @@ async def list_workers(
     also owns a ``doing`` job in ``procrastinate_jobs`` is the classic
     zombie-worker signature -- the admin UI colours those red.
     """
-    return await _repo.list_workers(db)
+    return await service.list_workers()

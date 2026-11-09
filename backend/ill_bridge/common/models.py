@@ -6,15 +6,25 @@ from pprint import pformat
 from typing import Any
 from uuid import UUID, uuid4
 
-from ill_bridge.common.enums import ILLDirection, RequestType, ProviderCommand
+from ill_bridge.common.enums import ILLDirection, ProviderCommand, RequestType
 from ill_bridge.common.states import WorkflowState
 from pydantic import BaseModel, ConfigDict, Field
+
+
+@dataclass(frozen=True, slots=True)
+class ApiClientIdentity:
+    """Identity of a machine-to-machine (client-credentials) caller."""
+
+    client_id: str
+    tenant_id: UUID
+    roles: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
 class FolioPatronGroup:
     name: str
     uuid: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class ProviderRequests:
@@ -29,8 +39,9 @@ class ProviderCapabilities:
     request_types: frozenset[RequestType]
     commands: frozenset[ProviderCommand]
     supports_webhooks: bool = False
-    supports_cursors: bool = False        # Libris: no cursor, no pagination
+    supports_cursors: bool = False  # Libris: no cursor, no pagination
     native_idempotency: bool = False
+
 
 class PatronReference(BaseModel):
     """A local patron identifier (before resolution against FOLIO), pre-resolution."""
@@ -65,8 +76,7 @@ class ReceivingLibrary(BaseModel):
     fax: str | None = None
     email: str | None = None
     bibsam: bool | None = False
-    
-    
+
 
 class RequestParty(BaseModel):
     model_config = ConfigDict(strict=True)
@@ -80,11 +90,13 @@ class RequestParty(BaseModel):
     response_date: datetime | None = None
     reserve: bool | None = False
 
+
 class LocalStatus(BaseModel):
     model_config = ConfigDict(strict=True)
-    
+
     status: str
     code: str
+
 
 class Bibliographic(BaseModel):
     model_config = ConfigDict(strict=True)
@@ -161,7 +173,7 @@ class ProviderRequestObservation(BaseModel):
             for name, value in self.__repr_args__()
         )
         return f"\n    {fields}\n"
-    
+
     def short_repr(self) -> str:
         return (
             f"{self.__class__.__name__}("
@@ -178,7 +190,7 @@ class ProviderRequestObservation(BaseModel):
             f"local_status={self.local_status!r}, "
             ")"
         )
-    
+
     def __repr__(self):
         return super().__repr__()
 

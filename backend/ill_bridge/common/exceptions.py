@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from uuid import UUID
+
+
 class ProviderDisabledError(Exception):
     pass
 
@@ -8,6 +13,10 @@ class ProviderWriteDisabledError(Exception):
 
 class JobNotFoundError(LookupError):
     """Raised when an operation targets a job id that does not exist."""
+
+
+class InvalidJobStatus(ValueError):
+    """Raised when a job status filter is not a known Procrastinate status."""
 
 
 class InvalidWorkflowTransition(Exception):
@@ -44,6 +53,36 @@ class InvalidLibrisRecord(ValueError):
 
 class ProviderNotFound(LookupError):
     """Raised when a provider is not found for a given tenant and provider id."""
+
+
+class BorrowingOrderNotFound(LookupError):
+    """Raised when a borrowing order is not found for a given tenant and id."""
+
+
+class TenantMismatch(RuntimeError):
+    """Raised when a row exists but does not belong to the acting tenant.
+
+    Distinct from "not found": the identifier is real, so retrying or
+    creating is wrong. Usually means ``app.tenant_id`` disagrees with the
+    tenant the caller passed, or a caller-supplied id belongs elsewhere.
+    """
+
+
+class LibrisReferenceInUse(RuntimeError):
+    """Raised when an lf_number is already claimed by another order.
+
+    At most one order may claim a Libris reference per tenant, enforced by
+    the partial unique index ``borrowing_orders_lf_number_uq``. Two orders
+    claiming one Libris request would make the A6 link ambiguous.
+    """
+
+    def __init__(self, lf_number: str, order_id: UUID | None = None) -> None:
+        super().__init__(
+            f"Libris reference {lf_number!r} is already claimed"
+            + (f" by order {order_id}" if order_id else "")
+        )
+        self.lf_number = lf_number
+        self.order_id = order_id
 
 
 class MappingProfileNotFound(LookupError):

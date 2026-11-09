@@ -20,7 +20,20 @@ uvicorn ill_bridge.providers.fake.server_faker:app --port 9001 # faker ill api
 ```
 
 ```bash
+cd backend
+source .venv/bin/activate
+secretspec run -- uv run python -m ill_bridge.jobs.outgoing_loans
+secretspec run -- uv run python -m ill_bridge.api.main
 uv run pytest                               # 16 tests
+# To see your print() output:
+secretspec run -- uv run pytest -s tests/unit/test_main.py
+# For verbose output:
+secretspec run -- uv run pytest -v -s
+# For just the PostgreSQL test:
+secretspec run -- uv run pytest -v -s tests/unit/test_main.py::TestPostgresDatabase
+# ----
+python -m ill_bridge.jobs.dispatch_effects
+secretspec run -- uv run python -m ill_bridge.jobs.dispatch_effects
 ```
 
 Production uses the **factory**, not a module-level app:
@@ -33,7 +46,7 @@ uvicorn --factory ill_bridge.api.main:create_app
 
 ## Layout
 
-```
+```bash
 ill_bridge/
 ├── api/            FastAPI app factory, v1 router, health probes
 ├── domain/         canonical models, state machine, guards
@@ -173,4 +186,16 @@ interlibrary_loan
 secretspec run -- uv run pyway validate
 secretspec run -- uv run pyway info
 secretspec run -- uv run pyway migrate
+```
+
+#### Generate the Models File
+
+Point `sqlacodegen` at your database and output it directly to a `models.py` file:
+
+```bash
+secretspec run -- sh -c 'echo "$ILL_DATABASE_URL"'
+secretspec run -- env | grep ILL_DATABASE_URL
+secretspec run -- sh -c 'printenv ILL_DATABASE_URL'
+---
+secretspec run -- uv run -- sh -c 'sqlacodegen "$ILL_DATABASE_URL" > ill_bridge/database/models/raw/generated_model_$(date +%Y_%m_%d).py'
 ```

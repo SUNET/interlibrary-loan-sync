@@ -3,9 +3,12 @@ import smtplib
 from email.message import EmailMessage
 
 import procrastinate
-
-from ill_bridge.jobs.app import app, settings
+from ill_bridge.config import get_settings
+from ill_bridge.jobs.app import create_procrastinate_app
 from ill_bridge.jobs.outgoing_loans import configure_logging, poll_enabled_providers
+
+
+app = create_procrastinate_app()
 
 
 @app.task(
@@ -34,6 +37,7 @@ async def poll_libris_lending() -> None:
 
 @app.task(queue="test", name="send_email")
 def send_email(to: str, subject: str, body: str):
+    settings = get_settings(strict_env=False)
     message = EmailMessage()
 
     message["From"] = "noreply@example.com"

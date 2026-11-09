@@ -8,6 +8,7 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 from ill_bridge.common.effects import EffectKind, plan_effects
+from ill_bridge.common.enums import IllSubjectType
 from ill_bridge.common.exceptions import ProviderNotFound, StaleVersionError
 from ill_bridge.common.models import ProviderRequestObservation
 from ill_bridge.common.states import ProcessingState, WorkflowState
@@ -384,7 +385,8 @@ class ProviderPollingRepository:
         effect_queue_entry = EffectQueue(
             id=uuid4(),
             tenant_id=tenant_id,
-            ill_request_id=ill_request_id,
+            subject_type=IllSubjectType.ILL_REQUEST.value,
+            subject_id=ill_request_id,
             kind=effect_kind,
             effect_key=f"{ill_request_id}:{to_workflow_state.value}:{effect_kind}",
             payload={

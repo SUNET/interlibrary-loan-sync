@@ -9,16 +9,17 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from ill_bridge.database.session import get_db
+from ill_bridge.dependencies.auth import require_admin
+from ill_bridge.repositories.provider import ProviderRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ill_bridge.database.session import get_db
-from ill_bridge.repositories.provider import ProviderRepository
-
-
 # from ill_bridge.api.v1.admin.jobs import router as jobs_router
-
-router = APIRouter(prefix="/libris", tags=["libris"])
-
+router = APIRouter(
+    prefix="/libris",
+    tags=["libris"],
+    dependencies=[Depends(require_admin)],
+)
 # router.include_router(jobs_router)
 
 
@@ -54,7 +55,7 @@ async def get_provider(
 
 
 @router.get("/providers/{provider_id}")
-async def get_provider(
+async def get_provider_by_id(
     provider_id: UUID,
     session: AsyncSession = Depends(get_db),
 ):

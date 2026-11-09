@@ -36,7 +36,6 @@ async def enqueue_send_email():
     )
 
 
-
 async def test() -> None:
     # Open Procrastinate for the whole lifetime of the scheduler process
     async with procrastinate_app.open_async():
@@ -63,6 +62,7 @@ async def test() -> None:
             await asyncio.Event().wait()  # run forever
         finally:
             scheduler.shutdown(wait=False)
+
 
 async def main() -> None:
     # Open Procrastinate for the whole lifetime of the scheduler process

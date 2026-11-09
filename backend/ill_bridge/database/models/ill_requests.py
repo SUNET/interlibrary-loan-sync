@@ -43,7 +43,7 @@ class IllRequests(Base):
             name="ill_requests_request_type_check",
         ),
         CheckConstraint(
-            "workflow_state = ANY (ARRAY['REQUESTED'::text, 'ACKNOWLEDGED'::text, 'RESERVED'::text, 'ACCEPTED'::text, 'ON_HOLD'::text, 'IN_TRANSIT'::text, 'DELIVERED'::text, 'RENEWAL_REQUESTED'::text, 'RENEWAL_ACKNOWLEDGED'::text, 'RECEIVED'::text, 'READY_FOR_PICKUP'::text, 'ON_LOAN'::text, 'RETURNED_FROM_PATRON'::text, 'RETURN_PENDING'::text, 'RETURN_IN_TRANSIT'::text, 'RETURNED'::text, 'FULFILLED'::text, 'COMPLETED'::text, 'CANCEL_PENDING'::text, 'CANCELLED'::text, 'REJECTED'::text, 'EXPIRED'::text])",
+            "workflow_state = ANY (ARRAY['REQUESTED'::text, 'ACKNOWLEDGED'::text, 'RESERVED'::text, 'DELIVERED'::text, 'RENEWAL_REQUESTED'::text, 'RENEWAL_ACKNOWLEDGED'::text, 'ACCEPTED'::text, 'ON_HOLD'::text, 'IN_TRANSIT'::text, 'ARRIVED'::text, 'RECEIVED'::text, 'READY_FOR_PICKUP'::text, 'ON_LOAN'::text, 'RETURNED_FROM_PATRON'::text, 'RETURN_PENDING'::text, 'RETURN_IN_TRANSIT'::text, 'RETURNED'::text, 'FULFILLED'::text, 'COMPLETED'::text, 'CANCEL_PENDING'::text, 'CANCELLED'::text, 'REJECTED'::text, 'EXPIRED'::text])",
             name="ill_requests_workflow_state_check",
         ),
         ForeignKeyConstraint(
@@ -128,15 +128,9 @@ class IllRequests(Base):
         back_populates="ill_requests",
     )
     tenant: Mapped["Tenants"] = relationship("Tenants", back_populates="ill_requests")
-    effect_queue: Mapped[list["EffectQueue"]] = relationship(
-        "EffectQueue",
-        primaryjoin="""and_(
-            IllRequests.id == foreign(EffectQueue.ill_request_id),
-            IllRequests.tenant_id == EffectQueue.tenant_id,
-        )""",
-        foreign_keys="[EffectQueue.ill_request_id]",
-        back_populates="ill_requests",
-    )
+    # No effect_queue relationship: effect_queue now references its subject
+    # polymorphically (subject_type + subject_id) with no foreign key, so there
+    # is no join for the ORM to follow. The dispatcher loads subjects by id.
     request_parties: Mapped[list["RequestParties"]] = relationship(
         "RequestParties", back_populates="ill_requests"
     )

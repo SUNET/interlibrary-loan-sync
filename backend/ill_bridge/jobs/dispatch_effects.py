@@ -40,15 +40,24 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ill_bridge.common.effects import EffectKind
+from ill_bridge.common.enums import EffectQueueRow, IllSubjectType, Outcome
 from ill_bridge.common.folio_client import (
     FolioApiClient,
     create_folio_requesting_library,
     get_folio_client,
 )
 from ill_bridge.common.models import ReceivingLibrary
-from ill_bridge.common.states import ProcessingState
+from ill_bridge.common.states import (
+    BorrowingOrderProcessingState,
+    ProcessingState,
+)
 from ill_bridge.config import FOLIO_TENANT_PATRON_GROUPS, Settings
-from ill_bridge.database.models import EffectQueue, IllRequests, Tenants
+from ill_bridge.database.models import (
+    BorrowingOrders,
+    EffectQueue,
+    IllRequests,
+    Tenants,
+)
 from ill_bridge.database.session import make_engine, make_sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -67,13 +76,6 @@ WORKER = f"{socket.gethostname()}:{os.getpid()}"
 # ---------------------------------------------------------------------------
 
 
-class Outcome(StrEnum):
-    CONFIRMED = "CONFIRMED"  # it definitely happened
-    REFUSED = "REFUSED"  # the target said no, permanently
-    TRANSIENT = "TRANSIENT"  # retry is safe and expected
-    UNKNOWN = "UNKNOWN"  # we do not know whether it happened
-
-
 @dataclass(frozen=True)
 class EffectOutcome:
     outcome: Outcome
@@ -84,10 +86,15 @@ class EffectOutcome:
 @dataclass(frozen=True)
 class EffectContext:
     """Everything a handler needs. Handlers get no DB session on purpose:
-    only the dispatcher writes to our database."""
+    only the dispatcher writes to our database.
+
+    ``subject`` is the row the effect points at, resolved by the dispatcher:
+    an ``IllRequests`` or a ``BorrowingOrders`` depending on ``subject_type``.
+    """
 
     tenant: Tenants
-    ill_request: IllRequests
+    subject_type: IllSubjectType
+    subject: IllRequests | BorrowingOrders
     payload: dict[str, Any]
 
 
@@ -149,6 +156,23 @@ def _folio(tenant_key: str | None = None) -> FolioApiClient:
     if key not in _folio_clients:
         _folio_clients[key] = get_folio_client(key)
     return _folio_clients[key]
+
+
+@handles(EffectKind.NOTIFY_INFODISK)
+async def notify_infodisk(ctx: EffectContext) -> EffectOutcome:
+    """Notify Infodisk of a new ILL request.
+
+    Idempotent: Infodisk can handle duplicate notifications.
+    """
+    try:
+        logger.info(
+            "notifying Infodisk for tenant %s: %s",
+            ctx.tenant.id,
+            ctx.payload,
+        )
+        return EffectOutcome(Outcome.CONFIRMED)
+    except Exception as exc:
+        return _outcome_from_http_error(exc, idempotent=True)
 
 
 @handles(EffectKind.FOLIO_ADD_REQUESTING_LIBRARY)
@@ -213,7 +237,7 @@ CLAIM_SQL = text(
            fence         = q.fence + 1
       FROM claimable c
      WHERE q.id = c.id
-    RETURNING q.id, q.tenant_id, q.ill_request_id, q.kind, q.payload,
+    RETURNING q.id, q.tenant_id, q.subject_id, q.subject_type, q.kind, q.payload,
               q.effect_key, q.attempts, q.fence
     """
 )
@@ -244,7 +268,7 @@ async def _claim(session: AsyncSession, tenant_id: UUID) -> list[dict[str, Any]]
 
 async def _finish(
     session: AsyncSession,
-    row: dict[str, Any],
+    row: EffectQueueRow,
     *,
     published: bool,
     attempts: int | None = None,
@@ -266,27 +290,55 @@ async def _finish(
 
     result = await session.execute(
         update(EffectQueue)
-        .where(EffectQueue.id == row["id"], EffectQueue.fence == row["fence"])
+        .where(EffectQueue.id == row.id, EffectQueue.fence == row.fence)
         .values(**values)
     )
     if result.rowcount != 1:
-        logger.warning("stale fence for effect %s; another worker owns it", row["id"])
+        logger.warning("stale fence for effect %s; another worker owns it", row.id)
         return False
     return True
 
 
+def _borrowing_processing_state(
+    ill_state: ProcessingState,
+) -> BorrowingOrderProcessingState:
+    """Collapse an ill_request ProcessingState onto a borrowing order's.
+
+    A borrowing order's processing_state vocabulary is only HANDLED/UNHANDLED:
+    the effect it owns (the infodisk mail) is either done or not. ``IN_SYNC``
+    means done, so it maps to HANDLED; every other intent (NEEDS_REVIEW,
+    CONFLICT, RETRYING, ...) means the mail has not landed -> UNHANDLED.
+    """
+    if ill_state is ProcessingState.IN_SYNC:
+        return BorrowingOrderProcessingState.HANDLED
+    return BorrowingOrderProcessingState.UNHANDLED
+
+
 async def _set_processing_state(
-    session: AsyncSession, row: dict[str, Any], state: ProcessingState
+    session: AsyncSession, row: EffectQueueRow, ill_state: ProcessingState
 ) -> None:
-    if row["ill_request_id"] is None:
-        return
+    """Reflect an effect outcome on its subject's processing_state.
+
+    The intent is expressed in ill_request vocabulary (ProcessingState); for a
+    borrowing order it is collapsed to HANDLED/UNHANDLED. The subject table is
+    chosen from ``subject_type``.
+    """
+    match row.subject_type:
+        case IllSubjectType.ILL_REQUEST:
+            table = IllRequests
+            value = ill_state.value
+        case IllSubjectType.BORROWING_ORDER:
+            table = BorrowingOrders
+            value = _borrowing_processing_state(ill_state).value
+        case _:
+            return
     await session.execute(
-        update(IllRequests)
+        update(table)
         .where(
-            IllRequests.tenant_id == row["tenant_id"],
-            IllRequests.id == row["ill_request_id"],
+            table.tenant_id == row.tenant_id,
+            table.id == row.subject_id,
         )
-        .values(processing_state=state.value)
+        .values(processing_state=value)
     )
 
 
@@ -306,50 +358,74 @@ def _backoff(attempt: int) -> datetime:
 
 
 async def _execute_one(
-    session: AsyncSession, tenant: Tenants, row: dict[str, Any]
+    session: AsyncSession, tenant: Tenants, effect_row: EffectQueueRow
 ) -> None:
-    kind = row["kind"]
+    kind = effect_row.kind
     handler = handler_for(kind)
-    print(f"Executing effect {row['id']} of kind {kind} for tenant {tenant.id}")  # Debugging line
+    print(
+        f"Executing effect {effect_row.id} of kind {kind} for tenant {tenant.id}"
+    )  # Debugging line
+    print("kind:", kind)  # Debugging line
     print("Handler:", handler)  # Debugging line
     if handler is None:
-        # Never drop an obligation: keep it queued and ask a human.
-        logger.warning("no handler for effect %s (%s)", kind, row["id"])
+        # Never drop an obligation: keep it queued and ask a human. For an
+        # ill_request that is NEEDS_REVIEW; for a borrowing order it collapses
+        # to UNHANDLED (see _set_processing_state).
+        logger.warning("no handler for effect %s (%s)", kind, effect_row.id)
         if await _finish(
             session,
-            row,
+            effect_row,
             published=False,
             available_at=_utcnow() + UNHANDLED_RECHECK,
             last_error=f"no handler for {kind}",
         ):
-            await _set_processing_state(session, row, ProcessingState.NEEDS_REVIEW)
+            await _set_processing_state(
+                session, effect_row, ProcessingState.NEEDS_REVIEW
+            )
         return
 
-    ill_request = await session.get(IllRequests, row["ill_request_id"])
-    if ill_request is None:
+    match effect_row.subject_type:
+        case IllSubjectType.BORROWING_ORDER:
+            subject = await session.get(BorrowingOrders, effect_row.subject_id)
+        case IllSubjectType.ILL_REQUEST:
+            subject = await session.get(IllRequests, effect_row.subject_id)
+        case _:
+            await _finish(
+                session,
+                effect_row,
+                published=True,
+                last_error=f"unknown subject_type {effect_row.subject_type}",
+            )
+            return
+
+    if subject is None:
         await _finish(
-            session, row, published=True, last_error="ill_request not found"
+            session, effect_row, published=True, last_error="subject not found"
         )
         return
 
-    ctx = EffectContext(tenant=tenant, ill_request=ill_request, payload=row["payload"])
+    ctx = EffectContext(
+        tenant=tenant,
+        subject_type=effect_row.subject_type,
+        subject=subject,
+        payload=effect_row.payload,
+    )
     try:
         result = await handler(ctx)
     except Exception as exc:  # a handler bug must not kill the whole batch
-        logger.exception("handler %s crashed for effect %s", kind, row["id"])
+        logger.exception("handler %s crashed for effect %s", kind, effect_row.id)
         result = EffectOutcome(Outcome.UNKNOWN, detail=f"handler crashed: {exc}")
 
-    await _record(session, row, result)
-
+    await _record(session, effect_row, result)
 
 async def _record(
-    session: AsyncSession, row: dict[str, Any], result: EffectOutcome
+    session: AsyncSession, row: EffectQueueRow, result: EffectOutcome
 ) -> None:
-    attempts = row["attempts"] + 1
+    attempts = row.attempts + 1
     logger.info(
         "effect %s %s -> %s %s",
-        row["kind"],
-        row["id"],
+        row.kind,
+        row.id,
         result.outcome,
         result.detail or "",
     )
@@ -404,9 +480,17 @@ async def dispatch_effects(sessionmaker) -> int:
     handled = 0
     async with sessionmaker() as session:
         tenants = (await session.execute(select(Tenants))).scalars().all()
-        
-    print(f"Dispatching effects for tenants: {[tenant.id for tenant in tenants]}")  # Debugging line
+    print("=================================================================")
+    print(
+        f"Dispatching effects for tenants: {[tenant.id for tenant in tenants]}"
+    )  # Debugging line
+    # TODO: remove after implementatiion use tenants from line 430
+    default_tenant = filter(lambda t: t.folio_tenant_key == "bth", tenants)
+    # print(f"Default tenant: {list(default_tenant)}")  # Debugging line
+    tenants = list(default_tenant)
+    print("tenants:", tenants)
     for tenant in tenants:
+        print("for-log: Dispatching effects for tenant:", tenant.id)  # Debugging line
         # One transaction per tenant: a failure in one tenant does not roll
         # back another tenant's completed effects.
         async with sessionmaker() as session:
@@ -415,8 +499,17 @@ async def dispatch_effects(sessionmaker) -> int:
                 rows = await _claim(session, tenant.id)
             # Lease is committed; now execute, committing per effect so a
             # crash mid-batch keeps earlier results.
-            for row in rows:
-                print(f"Dispatching effect {row['id']} for tenant {tenant.id}")  # Debugging line
+            effect_queues: list[EffectQueueRow] = [
+                EffectQueueRow.model_validate(dict(row)) for row in rows
+            ]
+            print(
+                f"Claimed {len(effect_queues)} effect(s) for tenant {tenant.id}"
+            )  # Debugging line
+            print(f"Effect queues: {effect_queues}")  # Debugging line
+            for row in effect_queues:
+                print(
+                    f"Dispatching effect {row.id} for tenant {tenant.id}"
+                )  # Debugging line
                 async with session.begin():
                     await _set_tenant(session, tenant.id)
                     await _execute_one(session, tenant, row)
@@ -443,7 +536,9 @@ async def main() -> None:
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
     finally:
         try:
-            await asyncio.gather(*(client.close() for client in _folio_clients.values()))
+            await asyncio.gather(
+                *(client.close() for client in _folio_clients.values())
+            )
         finally:
             _folio_clients.clear()
             await engine.dispose()
