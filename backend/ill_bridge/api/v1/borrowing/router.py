@@ -14,7 +14,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,7 @@ from ill_bridge.common.exceptions import (
     TenantMismatch,
 )
 from ill_bridge.common.folio_client import get_folio_client
+from ill_bridge.common.states import BorrowingOrderProcessingState
 from ill_bridge.database.models import Tenants
 from ill_bridge.database.session import get_db
 from ill_bridge.dependencies.auth import ApiClientIdentity, get_current_client
@@ -105,6 +106,62 @@ def build_service(
         BorrowingOrderRepository(session),
         folio_client=folio_client,
     )
+
+
+def _parse_processing_status(
+    value: str | None,
+) -> BorrowingOrderProcessingState | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    try:
+        return BorrowingOrderProcessingState(normalized)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="status must be 'handled' or 'unhandled'",
+        ) from exc
+
+
+@router.get(
+    "/order",
+    response_model=list[BorrowingOrderRead],
+    summary="List borrowing orders for the acting tenant (N1)",
+)
+@router.get(
+    "/orders",
+    response_model=list[BorrowingOrderRead],
+    include_in_schema=False,
+)
+async def list_borrowing_orders(
+    tenant: Annotated[Tenants, Depends(resolve_tenant)],
+    service: Annotated[BorrowingOrderService, Depends(build_service)],
+    status_filter: Annotated[
+        str | None,
+        Query(
+            alias="status",
+            description="Filter by processing_state: handled | unhandled (case-insensitive).",
+        ),
+    ] = None,
+    linked: Annotated[
+        bool | None,
+        Query(
+            description="Filter by presence of libris_lf_number (true = set, false = null).",
+        ),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[BorrowingOrderRead]:
+    """Return the tenant's borrowing orders, optionally filtered by ``status`` and ``linked``."""
+    processing_state = _parse_processing_status(status_filter)
+    orders = await service.list_orders(
+        tenant_id=tenant.id,
+        processing_state=processing_state,
+        linked=linked,
+        limit=limit,
+        offset=offset,
+    )
+    return [BorrowingOrderRead.model_validate(order) for order in orders]
 
 
 @router.post(
@@ -237,11 +294,9 @@ async def get_borrowing_order(
 @router.get("/order/identity", summary="Get user identity from access token")
 async def get_identity(
     identity: Annotated[ApiClientIdentity, Depends(get_current_client)],
-    request: BorrowingOrderCreate | None = None,
 ) -> dict[str, object]:
     return {
         "client_id": identity.client_id,
         "tenant_id": identity.tenant_id,
         "roles": sorted(identity.roles),
-        "request": request,
     }

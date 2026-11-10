@@ -111,8 +111,30 @@ class Settings(BaseSettings):
     )
 
     # --- SMTP ---------------------------------------------------------
-    smtp_host: str = "mailpit"
-    smtp_port: int = 1025
+    smtp_host: str = Field(
+        default="mailpit",
+        validation_alias=AliasChoices("ILL_SMTP_HOST", "SMTP_HOST", "ill_smtp_host"),
+    )
+    smtp_port: int = Field(
+        default=1025,
+        validation_alias=AliasChoices("ILL_SMTP_PORT", "SMTP_PORT", "ill_smtp_port"),
+    )
+    smtp_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_SMTP_USERNAME",
+            "SMTP_USERNAME",
+            "ill_smtp_username",
+        ),
+    )
+    smtp_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_SMTP_SECRET",
+            "SMTP_SECRET",
+            "ill_smtp_secret",
+        ),
+    )
 
     # --- Keycloak (admin provisioning) -------------------------------
     # Aliases accept the bare KEYCLOAK_* names used by the ops scripts as

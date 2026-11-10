@@ -16,7 +16,10 @@ from ill_bridge.common.effects import EffectKind
 from ill_bridge.common.enums import RequestType
 from ill_bridge.common.exceptions import LibrisReferenceInUse, TenantMismatch
 from ill_bridge.common.folio_client import FolioApiClient
-from ill_bridge.common.states import BorrowingOrderState
+from ill_bridge.common.states import (
+    BorrowingOrderProcessingState,
+    BorrowingOrderState,
+)
 from ill_bridge.database.models import BorrowingOrders
 from ill_bridge.folio.users import PatronLookup, find_patron
 from ill_bridge.repositories.borrowing_orders import BorrowingOrderRepository
@@ -43,6 +46,24 @@ class BorrowingOrderService:
     ) -> None:
         self.repository = repository
         self._folio_client = folio_client
+
+    async def list_orders(
+        self,
+        *,
+        tenant_id: UUID,
+        processing_state: BorrowingOrderProcessingState | None = None,
+        linked: bool | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[BorrowingOrders]:
+        """List borrowing orders for a tenant, filtered by processing_state and/or linked."""
+        return await self.repository.get_by_tenant(
+            tenant_id=tenant_id,
+            processing_state=processing_state,
+            linked=linked,
+            limit=limit,
+            offset=offset,
+        )
 
     async def create_order(
         self,

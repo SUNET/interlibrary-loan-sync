@@ -27,6 +27,7 @@ import asyncio
 import logging
 import os
 import random
+import smtplib
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -47,8 +48,10 @@ from ill_bridge.common.folio_client import (
     get_folio_client,
 )
 from ill_bridge.common.models import ReceivingLibrary
+from ill_bridge.common.smtp import send_email
 from ill_bridge.common.states import (
     BorrowingOrderProcessingState,
+    FolioUserStatus,
     ProcessingState,
 )
 from ill_bridge.config import FOLIO_TENANT_PATRON_GROUPS, Settings
@@ -158,21 +161,106 @@ def _folio(tenant_key: str | None = None) -> FolioApiClient:
     return _folio_clients[key]
 
 
+_FOLIO_VERDICT_LABELS: dict[str, str] = {
+    FolioUserStatus.FOUND.value: "Låntagaren finns i Folio",
+    FolioUserStatus.NOT_FOUND.value: "Låntagaren hittades inte i Folio",
+    FolioUserStatus.CHECK_FAILED.value: "Kunde inte kontrollera låntagaren i Folio",
+}
+
+
+def _render_infodisk_mail(ctx: EffectContext) -> tuple[str, str]:
+    """Render the subject and body for an infodisk notification."""
+    if isinstance(ctx.subject, BorrowingOrders):
+        order = ctx.subject
+        bib = order.bibliographic or {}
+        title = bib.get("title") or "(okänd titel)"
+        author = bib.get("author") or "-"
+        isbn_issn = bib.get("isbn_issn") or bib.get("isbn") or "-"
+        verdict = _FOLIO_VERDICT_LABELS.get(
+            order.folio_user_status, order.folio_user_status
+        )
+        folio_id = str(order.folio_user_id) if order.folio_user_id else "-"
+        subject = f"Ny fjärrlånebeställning ({order.request_type}): {title}"
+        body = (
+            f"En ny fjärrlånebeställning har inkommit för {ctx.tenant.name}.\n\n"
+            f"Beställnings-id: {order.id}\n"
+            f"Typ:             {order.request_type}\n"
+            f"Titel:           {title}\n"
+            f"Författare:      {author}\n"
+            f"ISBN/ISSN:       {isbn_issn}\n"
+            f"Låntagare:       {order.patron_name} ({order.patron_barcode})\n"
+            f"Folio-kontroll:  {verdict}\n"
+            f"Folio-id:        {folio_id}\n"
+        )
+        return subject, body
+
+    req = ctx.subject
+    bib = req.bibliographic or {}
+    title = bib.get("title") or req.external_request_id
+    subject = f"Ny fjärrlåneförfrågan ({req.direction}): {title}"
+    body = (
+        f"En ny fjärrlåneförfrågan har registrerats för {ctx.tenant.name}.\n\n"
+        f"ID:         {req.id}\n"
+        f"Referens:   {req.external_request_id}\n"
+        f"Riktning:   {req.direction}\n"
+        f"Typ:        {req.request_type}\n"
+        f"Titel:      {title}\n"
+    )
+    return subject, body
+
+
+def _outcome_from_smtp_error(exc: Exception) -> EffectOutcome:
+    """Translate an SMTP failure into an EffectOutcome."""
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return EffectOutcome(Outcome.REFUSED, detail=str(exc)[:200])
+    if isinstance(exc, smtplib.SMTPResponseException):
+        if 400 <= exc.smtp_code < 500:
+            return EffectOutcome(
+                Outcome.TRANSIENT, detail=f"SMTP {exc.smtp_code}: {exc.smtp_error!r}"
+            )
+        return EffectOutcome(
+            Outcome.REFUSED, detail=f"SMTP {exc.smtp_code}: {exc.smtp_error!r}"
+        )
+    if isinstance(exc, (smtplib.SMTPException, OSError, TimeoutError)):
+        return EffectOutcome(
+            Outcome.TRANSIENT, detail=f"{type(exc).__name__}: {exc}"
+        )
+    raise exc
+
+
 @handles(EffectKind.NOTIFY_INFODISK)
 async def notify_infodisk(ctx: EffectContext) -> EffectOutcome:
-    """Notify Infodisk of a new ILL request.
+    """Notify Infodisk of a new borrowing order or ILL request via email.
 
     Idempotent: Infodisk can handle duplicate notifications.
     """
-    try:
-        logger.info(
-            "notifying Infodisk for tenant %s: %s",
-            ctx.tenant.id,
-            ctx.payload,
+    print("context:", ctx)  # Debugging line
+    recipient = ctx.tenant.infodisk_email
+    print("recipient:", recipient)  # Debugging line
+    if not recipient:
+        return EffectOutcome(
+            Outcome.REFUSED,
+            detail=f"no infodisk_email configured for tenant {ctx.tenant.folio_tenant_key}",
         )
-        return EffectOutcome(Outcome.CONFIRMED)
-    except Exception as exc:
-        return _outcome_from_http_error(exc, idempotent=True)
+        
+
+    # subject, body = _render_infodisk_mail(ctx)
+    # try:
+    #     logger.info(
+    #         "sending Infodisk email to %s for tenant %s (subject_id=%s)",
+    #         recipient,
+    #         ctx.tenant.id,
+    #         ctx.subject.id,
+    #     )
+    #     await asyncio.to_thread(
+    #         send_email,
+    #         to=recipient,
+    #         subject=subject,
+    #         body=body,
+    #     )
+    #     return EffectOutcome(Outcome.CONFIRMED)
+    # except Exception as exc:
+    #     return _outcome_from_smtp_error(exc)
 
 
 @handles(EffectKind.FOLIO_ADD_REQUESTING_LIBRARY)

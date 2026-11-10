@@ -73,6 +73,7 @@ class BorrowingOrderRepository:
         tenant_id: UUID,
         state: BorrowingOrderState | None = None,
         processing_state: BorrowingOrderProcessingState | None = None,
+        linked: bool | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[BorrowingOrders]:
@@ -80,7 +81,8 @@ class BorrowingOrderRepository:
 
         ``state`` filters the local lifecycle (N1's staff list);
         ``processing_state`` filters by whether the order's effects completed,
-        which is what the attention list needs.
+        which is what the attention list needs;
+        ``linked`` filters by whether ``libris_lf_number`` is present.
         """
         statement = select(BorrowingOrders).where(
             BorrowingOrders.tenant_id == tenant_id
@@ -90,6 +92,14 @@ class BorrowingOrderRepository:
         if processing_state is not None:
             statement = statement.where(
                 BorrowingOrders.processing_state == processing_state.value
+            )
+        if linked is True:
+            statement = statement.where(
+                BorrowingOrders.libris_lf_number.is_not(None)
+            )
+        elif linked is False:
+            statement = statement.where(
+                BorrowingOrders.libris_lf_number.is_(None)
             )
         statement = (
             statement.order_by(BorrowingOrders.created_at.desc(), BorrowingOrders.id)
@@ -105,6 +115,7 @@ class BorrowingOrderRepository:
         tenant_id: UUID,
         state: BorrowingOrderState | None = None,
         processing_state: BorrowingOrderProcessingState | None = None,
+        linked: bool | None = None,
     ) -> int:
         """Count a tenant's orders under the same filters as ``get_by_tenant``."""
         statement = select(func.count()).select_from(BorrowingOrders).where(
@@ -115,6 +126,14 @@ class BorrowingOrderRepository:
         if processing_state is not None:
             statement = statement.where(
                 BorrowingOrders.processing_state == processing_state.value
+            )
+        if linked is True:
+            statement = statement.where(
+                BorrowingOrders.libris_lf_number.is_not(None)
+            )
+        elif linked is False:
+            statement = statement.where(
+                BorrowingOrders.libris_lf_number.is_(None)
             )
         result = await self._session.execute(statement)
         return int(result.scalar_one())
