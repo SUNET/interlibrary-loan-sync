@@ -207,23 +207,23 @@ def get_defaults():
 
 
 def get_folio_client(tenant_key: str | None = None) -> FolioApiClient:
-    # Get defaults
-    default_tenant, default_realm, default_username, default_secret = get_defaults()
-    # ---
-    environment = os.getenv("ILL_ENVIRONMENT", "test")
-    library_tenant = tenant_key or os.getenv("ILL_TENANT_NAME", "bth")
-    folio_tenant = os.getenv(
-        f"ILL_FOLIO_TENANT_{library_tenant.upper()}", default_tenant
+    from ill_bridge.config import get_settings
+
+    settings = get_settings(strict_env=False)
+    environment = (
+        "test" if settings.environment == "local" else settings.environment
     )
-    folio_realm = os.getenv(f"ILL_FOLIO_REALM_{library_tenant.upper()}", default_realm)
+    (
+        library_tenant,
+        folio_tenant,
+        folio_realm,
+        username,
+        secret,
+    ) = settings.get_folio_credentials(tenant_key)
 
     client = FolioApiClient(
-        username=os.getenv(
-            f"ILL_FOLIO_TENANT_USERNAME_{library_tenant.upper()}", default_username
-        ),
-        secret=os.getenv(
-            f"ILL_FOLIO_TENANT_SECRET_{library_tenant.upper()}", default_secret
-        ),
+        username=username,
+        secret=secret,
         auth_base_url=(
             f"https://auth.{library_tenant.lower()}-{environment}.bibliotek.sunet.se"
         ),

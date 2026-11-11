@@ -40,6 +40,31 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-45.0}
       POLL_LOOKBACK_DAYS: ${POLL_LOOKBACK_DAYS:-1}
+      # SMTP settings
+      ILL_SMTP_HOST: ${ill_smtp_host:-mailpit}
+      ILL_SMTP_PORT: ${ill_smtp_port:-1025}
+      ILL_SMTP_USERNAME: ${ill_smtp_username:-}
+      ILL_SMTP_SECRET: ${ill_smtp_secret:-}
+      # Keycloak settings
+      KEYCLOAK_URL: ${keycloak_url:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${keycloak_realm:-ill-bridge}
+      KEYCLOAK_ADMIN_REALM: ${keycloak_admin_realm:-master}
+      KEYCLOAK_ADMIN_LOGIN_METHOD: ${keycloak_admin_login_method:-user}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${keycloak_admin_client_id:-ill-bridge-provisioner}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${keycloak_admin_client_secret:-}
+      # FOLIO settings
+      ILL_FOLIO_SECRET_BTH: ${ILL_FOLIO_SECRET_BTH}
+      ILL_FOLIO_SECRET_HH: ${ILL_FOLIO_SECRET_HH}
+      ILL_FOLIO_SECRET_MDU: ${ILL_FOLIO_SECRET_MDU}
+      ILL_FOLIO_USERNAME_BTH: ${ILL_FOLIO_USERNAME_BTH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_BTH: ${ILL_FOLIO_REALM_BTH:-bth}
+      ILL_FOLIO_TENANT_BTH: ${ILL_FOLIO_TENANT_BTH:-bth}
+      ILL_FOLIO_USERNAME_HH: ${ILL_FOLIO_USERNAME_HH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_HH: ${ILL_FOLIO_REALM_HH:-diku}
+      ILL_FOLIO_TENANT_HH: ${ILL_FOLIO_TENANT_HH:-diku}
+      ILL_FOLIO_USERNAME_MDU: ${ILL_FOLIO_USERNAME_MDU:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_MDU: ${ILL_FOLIO_REALM_MDU:-diku}
+      ILL_FOLIO_TENANT_MDU: ${ILL_FOLIO_TENANT_MDU:-diku}
       # Pyway migration settings
       PYWAY_TYPE: postgres
       PYWAY_DATABASE_HOST: db
@@ -107,8 +132,6 @@ services:
       - ../backend/ill_bridge:/app/ill_bridge
     environment:
       <<: *backend_env
-      ILL_SMTP_HOST: "mailpit"
-      ILL_SMTP_PORT: "1025"
       BTH_LIBRIS_PASSWORD: ${BTH_LIBRIS_PASSWORD}
       HH_LIBRIS_PASSWORD: ${HH_LIBRIS_PASSWORD}
       MDU_LIBRIS_PASSWORD: ${MDU_LIBRIS_PASSWORD}
@@ -131,23 +154,7 @@ services:
     volumes:
       # Bind to see changes directly
       - ../backend/ill_bridge:/app/ill_bridge
-    environment:
-      <<: *backend_env
-      ILL_FOLIO_SECRET_BTH: ${ILL_FOLIO_SECRET_BTH}
-      ILL_FOLIO_SECRET_HH: ${ILL_FOLIO_SECRET_HH}
-      ILL_FOLIO_SECRET_MDU: ${ILL_FOLIO_SECRET_MDU}
-      # ---
-      ILL_FOLIO_USERNAME_BTH: ${ILL_FOLIO_USERNAME_BTH:-sidecar-module-access-client}
-      ILL_FOLIO_REALM_BTH: ${ILL_FOLIO_REALM_BTH:-bth}
-      ILL_FOLIO_TENANT_BTH: ${ILL_FOLIO_TENANT_BTH:-bth}
-      # ---
-      ILL_FOLIO_USERNAME_HH: ${ILL_FOLIO_USERNAME_HH:-sidecar-module-access-client}
-      ILL_FOLIO_REALM_HH: ${ILL_FOLIO_REALM_HH:-diku}
-      ILL_FOLIO_TENANT_HH: ${ILL_FOLIO_TENANT_HH:-diku}
-      # ---
-      ILL_FOLIO_USERNAME_MDU: ${ILL_FOLIO_USERNAME_MDU:-sidecar-module-access-client}
-      ILL_FOLIO_REALM_MDU: ${ILL_FOLIO_REALM_MDU:-diku}
-      ILL_FOLIO_TENANT_MDU: ${ILL_FOLIO_TENANT_MDU:-diku}
+    environment: *backend_env
     depends_on:
       migrate: { condition: service_completed_successfully }
 

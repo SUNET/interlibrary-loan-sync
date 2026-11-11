@@ -31,11 +31,11 @@ Configuration (ill_bridge.config.Settings; bare KEYCLOAK_* names also accepted):
     KEYCLOAK_API_AUDIENCE         Audience stamped on tokens (default ill-bridge-api)
 """
 
+import json
 import logging
 import time
 from pathlib import Path
 from uuid import uuid4
-import json
 
 import httpx2
 import jwt

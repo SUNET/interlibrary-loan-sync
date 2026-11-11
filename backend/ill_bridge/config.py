@@ -111,6 +111,124 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- FOLIO --------------------------------------------------------
+    tenant_name: str = Field(
+        default="bth",
+        validation_alias=AliasChoices("ILL_TENANT_NAME", "TENANT_NAME"),
+    )
+    folio_tenant: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ILL_FOLIO_TENANT", "FOLIO_TENANT"),
+    )
+    folio_tenant_realm: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_TENANT_REALM",
+            "ILL_FOLIO_REALM",
+            "FOLIO_TENANT_REALM",
+        ),
+    )
+    folio_tenant_username: str | None = Field(
+        default="sidecar-module-access-client",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_TENANT_USERNAME",
+            "ILL_FOLIO_USERNAME",
+            "FOLIO_TENANT_USERNAME",
+        ),
+    )
+    folio_tenant_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_TENANT_SECRET",
+            "ILL_FOLIO_SECRET",
+            "FOLIO_TENANT_SECRET",
+        ),
+    )
+    folio_tenant_bth: str = Field(
+        default="bth",
+        validation_alias=AliasChoices("ILL_FOLIO_TENANT_BTH", "FOLIO_TENANT_BTH"),
+    )
+    folio_realm_bth: str = Field(
+        default="bth",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_REALM_BTH",
+            "ILL_FOLIO_TENANT_REALM_BTH",
+            "FOLIO_REALM_BTH",
+        ),
+    )
+    folio_username_bth: str = Field(
+        default="sidecar-module-access-client",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_USERNAME_BTH",
+            "ILL_FOLIO_TENANT_USERNAME_BTH",
+            "FOLIO_USERNAME_BTH",
+        ),
+    )
+    folio_secret_bth: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_SECRET_BTH",
+            "ILL_FOLIO_TENANT_SECRET_BTH",
+            "FOLIO_SECRET_BTH",
+        ),
+    )
+    folio_tenant_hh: str = Field(
+        default="diku",
+        validation_alias=AliasChoices("ILL_FOLIO_TENANT_HH", "FOLIO_TENANT_HH"),
+    )
+    folio_realm_hh: str = Field(
+        default="diku",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_REALM_HH",
+            "ILL_FOLIO_TENANT_REALM_HH",
+            "FOLIO_REALM_HH",
+        ),
+    )
+    folio_username_hh: str = Field(
+        default="sidecar-module-access-client",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_USERNAME_HH",
+            "ILL_FOLIO_TENANT_USERNAME_HH",
+            "FOLIO_USERNAME_HH",
+        ),
+    )
+    folio_secret_hh: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_SECRET_HH",
+            "ILL_FOLIO_TENANT_SECRET_HH",
+            "FOLIO_SECRET_HH",
+        ),
+    )
+    folio_tenant_mdu: str = Field(
+        default="diku",
+        validation_alias=AliasChoices("ILL_FOLIO_TENANT_MDU", "FOLIO_TENANT_MDU"),
+    )
+    folio_realm_mdu: str = Field(
+        default="diku",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_REALM_MDU",
+            "ILL_FOLIO_TENANT_REALM_MDU",
+            "FOLIO_REALM_MDU",
+        ),
+    )
+    folio_username_mdu: str = Field(
+        default="sidecar-module-access-client",
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_USERNAME_MDU",
+            "ILL_FOLIO_TENANT_USERNAME_MDU",
+            "FOLIO_USERNAME_MDU",
+        ),
+    )
+    folio_secret_mdu: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ILL_FOLIO_SECRET_MDU",
+            "ILL_FOLIO_TENANT_SECRET_MDU",
+            "FOLIO_SECRET_MDU",
+        ),
+    )
+
     # --- SMTP ---------------------------------------------------------
     smtp_host: str = Field(
         default="mailpit",
@@ -255,6 +373,32 @@ class Settings(BaseSettings):
     def is_sigel_allowed(self, sigel: str) -> bool:
         """Guard for any request that selects data by library code."""
         return sigel.strip() in self.libris_allowed_sigels
+
+    def get_folio_credentials(
+        self, tenant_key: str | None = None
+    ) -> tuple[str, str | None, str | None, str | None, str | None]:
+        """Resolve (library_tenant, folio_tenant, folio_realm, username, secret) for a tenant."""
+        library_tenant = (tenant_key or self.tenant_name or "bth").strip().lower()
+        default_secret = (
+            self.folio_tenant_secret.get_secret_value()
+            if self.folio_tenant_secret is not None
+            else None
+        )
+
+        tenant_field = getattr(self, f"folio_tenant_{library_tenant}", None)
+        realm_field = getattr(self, f"folio_realm_{library_tenant}", None)
+        username_field = getattr(self, f"folio_username_{library_tenant}", None)
+        secret_field = getattr(self, f"folio_secret_{library_tenant}", None)
+
+        folio_tenant = tenant_field or self.folio_tenant
+        folio_realm = realm_field or self.folio_tenant_realm
+        username = username_field or self.folio_tenant_username
+        secret = (
+            secret_field.get_secret_value()
+            if secret_field is not None
+            else default_secret
+        )
+        return library_tenant, folio_tenant, folio_realm, username, secret
 
 
 def _accepted_env_names() -> set[str]:

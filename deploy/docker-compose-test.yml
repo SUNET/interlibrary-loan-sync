@@ -35,7 +35,7 @@ services:
       interval: 5s
 
   migrate:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.4
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.5
     logging: *default-logging
     command: python -m ill_bridge.jobs.migrate
     environment: &backend_env
@@ -49,6 +49,32 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-45.0}
       POLL_LOOKBACK_DAYS: ${POLL_LOOKBACK_DAYS:-1}
+      # SMTP settings
+      ILL_SMTP_HOST: ${ill_smtp_host:-smtp.sunet.se}
+      ILL_SMTP_PORT: ${ill_smtp_port:-587}
+      ILL_SMTP_USERNAME: ${ill_smtp_username:-folio-test}
+      ILL_SMTP_SECRET: ${ill_smtp_secret}
+      # Keycloak settings 
+      # TODO: KEyckia varies per tenants check. docs/API_TENANT_FOLIO_AND_KEYCLOAK_CONFIGS.md
+      KEYCLOAK_URL: ${keycloak_url:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${keycloak_realm:-ill-bridge}
+      KEYCLOAK_ADMIN_REALM: ${keycloak_admin_realm:-master}
+      KEYCLOAK_ADMIN_LOGIN_METHOD: ${keycloak_admin_login_method:-user}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${keycloak_admin_client_id:-ill-bridge-provisioner}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${keycloak_admin_client_secret:-}
+      # FOLIO settings
+      ILL_FOLIO_SECRET_BTH: ${ILL_FOLIO_SECRET_BTH}
+      ILL_FOLIO_SECRET_HH: ${ILL_FOLIO_SECRET_HH}
+      ILL_FOLIO_SECRET_MDU: ${ILL_FOLIO_SECRET_MDU}
+      ILL_FOLIO_USERNAME_BTH: ${ILL_FOLIO_USERNAME_BTH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_BTH: ${ILL_FOLIO_REALM_BTH:-bth}
+      ILL_FOLIO_TENANT_BTH: ${ILL_FOLIO_TENANT_BTH:-bth}
+      ILL_FOLIO_USERNAME_HH: ${ILL_FOLIO_USERNAME_HH:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_HH: ${ILL_FOLIO_REALM_HH:-diku}
+      ILL_FOLIO_TENANT_HH: ${ILL_FOLIO_TENANT_HH:-diku}
+      ILL_FOLIO_USERNAME_MDU: ${ILL_FOLIO_USERNAME_MDU:-sidecar-module-access-client}
+      ILL_FOLIO_REALM_MDU: ${ILL_FOLIO_REALM_MDU:-diku}
+      ILL_FOLIO_TENANT_MDU: ${ILL_FOLIO_TENANT_MDU:-diku}
       # Pyway migration settings
       PYWAY_TYPE: postgres
       PYWAY_DATABASE_HOST: db
@@ -63,7 +89,7 @@ services:
         condition: service_healthy
 
   api:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.4
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.5
     logging: *default-logging
     command: uvicorn --factory ill_bridge.api.main:create_app --host 0.0.0.0 --port 8000
     environment:
@@ -78,7 +104,7 @@ services:
         condition: service_completed_successfully
 
   admin-ui:
-    image: ghcr.io/sunet/ill-bridge-ui:0.1.4
+    image: ghcr.io/sunet/ill-bridge-ui:0.2.5
     logging: *default-logging
     environment:
       ILL_UI_ADMIN_API_BASE: http://api:8000/api/v1
@@ -93,14 +119,12 @@ services:
         condition: service_started
 
   worker-provider:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.4
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.5
     logging: *default-logging
     command: >
       procrastinate --app=ill_bridge.jobs.worker.app worker --queues=provider,test --concurrency=4
     environment:
       <<: *backend_env
-      ILL_SMTP_HOST: "mailpit"
-      ILL_SMTP_PORT: "1025"
       BTH_LIBRIS_PASSWORD: ${BTH_LIBRIS_PASSWORD}
       HH_LIBRIS_PASSWORD: ${HH_LIBRIS_PASSWORD}
       MDU_LIBRIS_PASSWORD: ${MDU_LIBRIS_PASSWORD}
@@ -109,7 +133,7 @@ services:
         condition: service_completed_successfully
 
   scheduler:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.4
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.5
     logging: *default-logging
     command: python -m ill_bridge.jobs.scheduler
     environment: *backend_env
@@ -118,23 +142,10 @@ services:
         condition: service_completed_successfully
 
   effect-dispatcher:
-    image: ghcr.io/sunet/ill-bridge-backend:0.1.4
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.5
     logging: *default-logging
     command: python -m ill_bridge.jobs.dispatch_effects
-    environment:
-      <<: *backend_env
-      ILL_FOLIO_SECRET_BTH: ${ILL_FOLIO_SECRET_BTH}
-      ILL_FOLIO_SECRET_HH: ${ILL_FOLIO_SECRET_HH}
-      ILL_FOLIO_SECRET_MDU: ${ILL_FOLIO_SECRET_MDU}
-      ILL_FOLIO_USERNAME_BTH: ${ILL_FOLIO_USERNAME_BTH:-sidecar-module-access-client}
-      ILL_FOLIO_REALM_BTH: ${ILL_FOLIO_REALM_BTH:-bth}
-      ILL_FOLIO_TENANT_BTH: ${ILL_FOLIO_TENANT_BTH:-bth}
-      ILL_FOLIO_USERNAME_HH: ${ILL_FOLIO_USERNAME_HH:-sidecar-module-access-client}
-      ILL_FOLIO_REALM_HH: ${ILL_FOLIO_REALM_HH:-diku}
-      ILL_FOLIO_TENANT_HH: ${ILL_FOLIO_TENANT_HH:-diku}
-      ILL_FOLIO_USERNAME_MDU: ${ILL_FOLIO_USERNAME_MDU:-sidecar-module-access-client}
-      ILL_FOLIO_REALM_MDU: ${ILL_FOLIO_REALM_MDU:-diku}
-      ILL_FOLIO_TENANT_MDU: ${ILL_FOLIO_TENANT_MDU:-diku}
+    environment: *backend_env
     depends_on:
       migrate:
         condition: service_completed_successfully
