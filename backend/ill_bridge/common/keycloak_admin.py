@@ -62,6 +62,7 @@ class KeycloakAdmin:
         self.base_url = settings.keycloak_url.rstrip("/")
         self.realm = settings.keycloak_realm  # realm being administered
         self.token_realm = settings.keycloak_admin_realm  # realm the token is from
+        self.login_method = settings.keycloak_admin_login_method
         self.client_id = settings.keycloak_admin_client_id
         self.client_secret = settings.keycloak_admin_client_secret.get_secret_value()
         self.api_audience = settings.keycloak_api_audience
@@ -89,8 +90,6 @@ class KeycloakAdmin:
     # Authentication (client_credentials, cached) -- cf. FolioApiClient
     # ------------------------------------------------------------------
 
-
-
     def inspect_token(self, access_token: str) -> None:
         payload = access_token.split(".")[1]
         payload += "=" * (-len(payload) % 4)
@@ -101,13 +100,23 @@ class KeycloakAdmin:
         print("Token audience:", claims.get("aud"))
         print("Token client:", claims.get("azp"))
         print("Realm roles:", claims.get("realm_access", {}).get("roles", []))
-        print("Resource roles:", json.dumps(
-            claims.get("resource_access", {}),
-            indent=2,
-        ))
-    
+        print(
+            "Resource roles:",
+            json.dumps(
+                claims.get("resource_access", {}),
+                indent=2,
+            ),
+        )
+
     def _get_access_token(self) -> str:
         """Return a cached access token, refreshing it when necessary."""
+        """
+        For login method user, you need to create a dedicated user `ill-bridge-provisioner` in the admin realm and
+        use its username and password to obtain a token. 
+        The user must have the necessary permissions to manage clients in the target realm
+        and client scopes  `kc-admin-api`
+        """
+
         if (
             self._access_token is not None
             and time.monotonic() - self._token_obtained_at < self._token_ttl
@@ -116,17 +125,25 @@ class KeycloakAdmin:
             return self._access_token
 
         token_url = (
-            f"{self.base_url}/realms/{self.token_realm}"
-            f"/protocol/openid-connect/token"
+            f"{self.base_url}/realms/{self.token_realm}/protocol/openid-connect/token"
         )
+        if self.login_method == "cli":
+            token_data = {
+                "grant_type": "password",
+                "client_id": "admin-cli",
+                "username": self.client_id,
+                "password": self.client_secret,
+            }
+        else:
+            token_data = {
+                "grant_type": "client_credentials",
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+            }
         try:
             response = self._http.post(
                 token_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                },
+                data=token_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             response.raise_for_status()
@@ -190,6 +207,11 @@ class KeycloakAdmin:
                 f"{method} {path} failed ({response.status_code}): {response.text}"
             )
         return response
+    
+    def test_login(self) -> None:
+        """Test that the admin client can log in and obtain a token."""
+        token = self._get_access_token()
+        print("Obtained access token:", token)
 
     def create_university(
         self,
@@ -299,6 +321,61 @@ class KeycloakAdmin:
         logger.info("Added audience %s to client %s", self.api_audience, client_id)
 
         return client_uuid
+
+    def create_api_audience_client(
+        self,
+        *,
+        client_id: str | None = None,
+    ) -> str:
+        """Create the API audience client (e.g. ``ill-bridge-api``).
+
+        Configured as:
+        - Client type: OpenID Connect (protocol="openid-connect")
+        - Client authentication: ON (publicClient=False)
+        - Standard flow: OFF (standardFlowEnabled=False)
+        - Direct access grants: OFF (directAccessGrantsEnabled=False)
+        - Service accounts: OFF (serviceAccountsEnabled=False)
+        - Root URL / Home URL: empty
+        """
+        target_client_id = client_id or self.api_audience
+
+        created = self._request(
+            "POST",
+            "clients",
+            allow_status=(409,),
+            json={
+                "clientId": target_client_id,
+                "name": target_client_id,
+                "description": "ILL Bridge API token audience",
+                "enabled": True,
+                "protocol": "openid-connect",
+                "publicClient": False,
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": False,
+                "implicitFlowEnabled": False,
+                "rootUrl": "",
+                "baseUrl": "",
+            },
+        )
+        if created.status_code == 409:
+            logger.info(
+                "Keycloak API audience client %s already exists; reusing it",
+                target_client_id,
+            )
+        else:
+            logger.info("Created Keycloak API audience client %s", target_client_id)
+
+        response = self._request(
+            "GET",
+            "clients",
+            params={"clientId": target_client_id},
+        )
+        clients = response.json()
+        if not clients:
+            raise KeycloakAdminError(f"Keycloak client {target_client_id} not found")
+
+        return clients[0]["id"]
 
 
 __all__ = [

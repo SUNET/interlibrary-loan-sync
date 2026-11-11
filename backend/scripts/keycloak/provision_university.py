@@ -11,7 +11,7 @@ The Keycloak Admin client lives in
 provides a command-line entrypoint. The admin token is obtained from the
 Keycloak token endpoint with the ``client_credentials`` grant -- never read
 from the environment directly.
-
+secretspec run -- uv run python -m scripts.keycloak.provision_university
 Usage:
     from provision_university import provision_university
 
@@ -47,6 +47,26 @@ logger = logging.getLogger(__name__)
 
 JWT_BEARER_ASSERTION = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
+
+def create_api_audience_client(
+    *,
+    client_id: str | None = None,
+    settings: Settings | None = None,
+) -> str:
+    """Create the ``ill-bridge-api`` audience client in Keycloak.
+
+    Configures an OpenID Connect confidential client with standard flow,
+    direct access grants, and service accounts disabled, and empty Root/Home URLs.
+    """
+    settings = settings or get_settings(strict_env=False)
+    with KeycloakAdmin(settings) as admin:
+        return admin.create_api_audience_client(client_id=client_id)
+
+
+def test_keycloak_login() -> None:
+    settings =  get_settings(strict_env=False)
+    with KeycloakAdmin(settings) as admin:
+        return admin.test_login()
 
 def provision_university(
     *,
@@ -118,7 +138,17 @@ def get_client_access_token(
     return response.json()["access_token"]
 
 
-def test_provision_university(client_id="bth") -> None:
+def test_create_api_audience_client(client_id: str = "ill-bridge-api") -> None:
+    """Smoke test for creating the ill-bridge-api audience client."""
+    settings = get_settings(strict_env=False)
+    client_uuid = create_api_audience_client(
+        client_id=client_id,
+        settings=settings,
+    )
+    print("Provisioned API audience client UUID:", client_uuid)
+
+
+def test_provision_university(client_id="bth-ill-api-client") -> None:
     """Test the provision_university script end-to-end.
 
     This is a smoke test that provisions a Keycloak client for a university,
@@ -138,7 +168,7 @@ def test_provision_university(client_id="bth") -> None:
     print("Provisioned Keycloak client UUID:", client_uuid)
 
 
-def test_get_access_token(client_id="bth") -> None:
+def test_get_access_token(client_id="bth-ill-api-client") -> None:
     """Test obtaining an access token for a provisioned university client.
 
     This is a smoke test that uses an existing Keycloak client for a university
@@ -169,6 +199,8 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     load_dotenv()
-    # test_provision_university()
-    test_get_access_token()
-    
+    print("Provisioning API audience client...")
+    # test_keycloak_login()
+    # test_create_api_audience_client(client_id="ill-bridge-api")
+    # test_provision_university(client_id="bth-ill-api-client")
+    test_get_access_token(client_id="bth-ill-api-client")

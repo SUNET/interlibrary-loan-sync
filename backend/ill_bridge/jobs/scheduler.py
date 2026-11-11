@@ -7,9 +7,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 from faker import Faker
 
 from ill_bridge.jobs.tasks import (
+    dispatch_effects_task,
     ping,
     poll_libris_lending,
-    send_email,
+    send_email_test,
 )
 from ill_bridge.jobs.worker import app as procrastinate_app
 
@@ -23,13 +24,17 @@ async def enqueue_poll_libris_lending():
     await poll_libris_lending.defer_async()
 
 
+async def enqueue_dispatch_effects():
+    await dispatch_effects_task.defer_async()
+
+
 async def enqueue_ping():
     await ping.defer_async()
 
 
 async def enqueue_send_email():
     # Generate values at execution time (not at schedule-definition time)
-    await send_email.defer_async(
+    await send_email_test.defer_async(
         to=fake.email(),
         subject="Scheduled Email",
         body=fake.paragraph(nb_sentences=4),
@@ -74,6 +79,13 @@ async def main() -> None:
             enqueue_poll_libris_lending,
             IntervalTrigger(seconds=45),
             id="poll-libris-lending",
+            replace_existing=True,
+        )
+
+        scheduler.add_job(
+            enqueue_dispatch_effects,
+            IntervalTrigger(seconds=10),
+            id="dispatch-effects",
             replace_existing=True,
         )
 

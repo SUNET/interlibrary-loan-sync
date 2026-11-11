@@ -1,12 +1,9 @@
-import smtplib
-from collections.abc import Generator, Iterator
-from contextlib import contextmanager
-from email.message import EmailMessage
-
 import procrastinate
 
-from ill_bridge.config import Settings, get_settings
+from ill_bridge.common.emails.smtp import send_email
+from ill_bridge.config import get_settings
 from ill_bridge.jobs.app import create_procrastinate_app
+from ill_bridge.jobs.dispatch_effects import run_dispatch_effects_cycle
 from ill_bridge.jobs.outgoing_loans import configure_logging, poll_enabled_providers
 
 app = create_procrastinate_app()
@@ -27,6 +24,21 @@ async def poll_libris_lending() -> None:
     await poll_enabled_providers()
 
 
+@app.task(
+    queue="provider",
+    name="dispatch_effects",
+    retry=procrastinate.RetryStrategy(
+        max_attempts=3,
+        wait=30,
+        exponential_wait=2,
+    ),
+)
+async def dispatch_effects_task() -> None:
+    """Run one effect queue dispatch cycle."""
+    configure_logging()
+    await run_dispatch_effects_cycle()
+
+
 # Procrastinate's cron accepts an optional 6th column for SECONDS, so the
 # 30-60s polling target in the SLO is expressible directly — no self-
 # rescheduling loop, no offset tasks.
@@ -37,17 +49,13 @@ async def poll_libris_lending() -> None:
 
 
 @app.task(queue="test", name="send_email")
-def send_email_test(to: str, subject: str, body: str):
-    settings = get_settings(strict_env=False)
-    message = EmailMessage()
-
-    message["From"] = "noreply@example.com"
-    message["To"] = to
-    message["Subject"] = subject
-
-    message.set_content(body)
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as smtp:
-        smtp.send_message(message)
+def send_email_test(to: str, subject: str, body: str) -> None:
+    send_email(
+        to=to,
+        from_="noreply@example.com",
+        subject=subject,
+        body=body,
+    )
 
 
 @app.task(queue="provider", name="send_email_production")
@@ -58,42 +66,17 @@ def send_email_prod(
     *,
     html: str | None = None,
     sender: str | None = None,
-    ssl: bool = False,
-    starttls: bool = True,
 ) -> None:
-    @contextmanager
-    def _open_smtp(
-        settings: Settings, *, ssl: bool = False, starttls: bool = True
-    ) -> Generator[smtplib.SMTP]:
-        cls = smtplib.SMTP_SSL if ssl else smtplib.SMTP
-        with cls(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
-            smtp.ehlo()
-            if starttls and not ssl and smtp.has_extn("starttls"):
-                smtp.starttls()
-                smtp.ehlo()
-            if (
-                settings.smtp_username
-                and settings.smtp_secret
-                and smtp.has_extn("auth")
-            ):
-                smtp.login(
-                    settings.smtp_username, settings.smtp_secret.get_secret_value()
-                )
-            yield smtp
-
     """Send a plain-text and/or HTML email."""
     settings = get_settings(strict_env=False)
-    message = EmailMessage()
-    message["From"] = (
-        sender or getattr(settings, "smtp_from", None) or "noreply@example.com"
+    send_email(
+        to=to,
+        from_=sender or getattr(settings, "smtp_from", None) or "noreply@sunet.se",
+        subject=subject,
+        body=body or None,
+        html=html,
+        settings=settings,
     )
-    message["To"] = to
-    message["Subject"] = subject
-    message.set_content(body or "This email requires an HTML-capable client.")
-    if html:
-        message.add_alternative(html, subtype="html")
-    with _open_smtp(settings, ssl=ssl, starttls=starttls) as smtp:
-        smtp.send_message(message)
 
 
 @app.task(queue="test", name="ping")

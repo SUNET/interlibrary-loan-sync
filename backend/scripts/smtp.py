@@ -43,11 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     print("SMTP from:", getattr(settings, "smtp_from", None))
     send_email(
         to=args.to,
-        from_=args.sender or getattr(settings, "smtp_from", None),
+        from_=args.sender or getattr(settings, "smtp_from", None) or "noreply@sunet.se",
         subject=args.subject,
-        body=args.body,
+        body=args.body or None,
         html=html,
-        settings=settings
+        settings=settings,
     )
     print(f"Sent to {args.to}")
     return 0

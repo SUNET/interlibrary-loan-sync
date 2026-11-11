@@ -15,6 +15,7 @@ from ill_bridge.common.models import FolioPatronGroup
 
 Environment = Literal["local", "test", "staging", "production"]
 AuthMode = Literal["oidc", "mock"]
+KeycloakAdminLoginMethod = Literal["cli", "user"]
 
 
 LIBRIS_BASE_URL = "https://iller.libris.kb.se/librisfjarrlan/api"
@@ -151,6 +152,14 @@ class Settings(BaseSettings):
         default="ill-bridge",
         validation_alias=AliasChoices(
             "ILL_KEYCLOAK_ADMIN_REALM", "KEYCLOAK_ADMIN_REALM"
+        ),
+    )
+    keycloak_admin_login_method: KeycloakAdminLoginMethod = Field(
+        default="user",
+        validation_alias=AliasChoices(
+            "ILL_KEYCLOAK_ADMIN_LOGIN_METHOD",
+            "KEYCLOAK_ADMIN_LOGIN_METHOD",
+            "keycloak_admin_login_method",
         ),
     )
     keycloak_admin_client_id: str | None = Field(

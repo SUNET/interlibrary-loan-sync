@@ -41,6 +41,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ill_bridge.common.effects import EffectKind
+from ill_bridge.common.emails.smtp import send_email
 from ill_bridge.common.enums import EffectQueueRow, IllSubjectType, Outcome
 from ill_bridge.common.folio_client import (
     FolioApiClient,
@@ -48,7 +49,6 @@ from ill_bridge.common.folio_client import (
     get_folio_client,
 )
 from ill_bridge.common.models import ReceivingLibrary
-from ill_bridge.common.smtp import send_email
 from ill_bridge.common.states import (
     BorrowingOrderProcessingState,
     FolioUserStatus,
@@ -221,7 +221,7 @@ def _outcome_from_smtp_error(exc: Exception) -> EffectOutcome:
         return EffectOutcome(
             Outcome.REFUSED, detail=f"SMTP {exc.smtp_code}: {exc.smtp_error!r}"
         )
-    if isinstance(exc, (smtplib.SMTPException, OSError, TimeoutError)):
+    if isinstance(exc, (smtplib.SMTPException, OSError, TimeoutError, RuntimeError)):
         return EffectOutcome(
             Outcome.TRANSIENT, detail=f"{type(exc).__name__}: {exc}"
         )
@@ -239,28 +239,28 @@ async def notify_infodisk(ctx: EffectContext) -> EffectOutcome:
     print("recipient:", recipient)  # Debugging line
     if not recipient:
         return EffectOutcome(
-            Outcome.REFUSED,
+            Outcome.TRANSIENT,
             detail=f"no infodisk_email configured for tenant {ctx.tenant.folio_tenant_key}",
         )
-        
 
-    # subject, body = _render_infodisk_mail(ctx)
-    # try:
-    #     logger.info(
-    #         "sending Infodisk email to %s for tenant %s (subject_id=%s)",
-    #         recipient,
-    #         ctx.tenant.id,
-    #         ctx.subject.id,
-    #     )
-    #     await asyncio.to_thread(
-    #         send_email,
-    #         to=recipient,
-    #         subject=subject,
-    #         body=body,
-    #     )
-    #     return EffectOutcome(Outcome.CONFIRMED)
-    # except Exception as exc:
-    #     return _outcome_from_smtp_error(exc)
+    subject, body = _render_infodisk_mail(ctx)
+    try:
+        logger.info(
+            "sending Infodisk email to %s for tenant %s (subject_id=%s)",
+            recipient,
+            ctx.tenant.id,
+            ctx.subject.id,
+        )
+        await asyncio.to_thread(
+            send_email,
+            to=recipient,
+            from_="noreply@sunet.se",
+            subject=subject,
+            body=body,
+        )
+        return EffectOutcome(Outcome.CONFIRMED)
+    except (smtplib.SMTPException, OSError, TimeoutError, RuntimeError) as exc:
+        return _outcome_from_smtp_error(exc)
 
 
 @handles(EffectKind.FOLIO_ADD_REQUESTING_LIBRARY)
@@ -603,6 +603,26 @@ async def dispatch_effects(sessionmaker) -> int:
                     await _execute_one(session, tenant, row)
                 handled += 1
     return handled
+
+
+async def run_dispatch_effects_cycle() -> int:
+    """Run a single effect dispatch cycle with its own DB engine."""
+    settings = Settings()
+    engine = make_engine(settings)
+    sessionmaker = make_sessionmaker(engine)
+    try:
+        count = await dispatch_effects(sessionmaker)
+        if count:
+            logger.info("dispatched %d effect(s)", count)
+        return count
+    finally:
+        try:
+            await asyncio.gather(
+                *(client.close() for client in _folio_clients.values())
+            )
+        finally:
+            _folio_clients.clear()
+            await engine.dispose()
 
 
 async def main() -> None:
