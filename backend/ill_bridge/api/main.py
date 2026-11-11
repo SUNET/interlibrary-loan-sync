@@ -1,18 +1,15 @@
-import asyncio
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
-from fastapi import FastAPI, Request, Depends, Response, status
+
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from ill_bridge.api.v1.router import api_router
 from ill_bridge.config import Settings, get_settings
 from ill_bridge.database.session import make_engine, make_sessionmaker, ping_db
-
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +25,7 @@ async def lifespan(app: FastAPI):
     Manage application lifecycle - startup and shutdown.
     Shutdown order matters: stop producers before closing what they use.
     """
-    from ill_bridge.jobs.worker import app as procrastinate_app
+    from ill_bridge.jobs.bootstrap import app as procrastinate_app
 
     settings = get_settings(
         strict_env=False

@@ -5,13 +5,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from ill_bridge.jobs.bootstrap import app as procrastinate_app
 from ill_bridge.jobs.tasks import (
     dispatch_effects_task,
     ping,
     poll_libris_lending,
     send_email_test,
 )
-from ill_bridge.jobs.worker import app as procrastinate_app
 
 
 async def enqueue_poll_libris_lending():

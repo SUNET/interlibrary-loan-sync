@@ -53,7 +53,7 @@ def run_procrastinate() -> None:
 
     print("Procrastinate schema does not exist. Creating...", flush=True)
     subprocess.run(
-        ["procrastinate", "--app=ill_bridge.jobs.worker.app", "schema", "--apply"],
+        ["procrastinate", "--app=ill_bridge.jobs.bootstrap.app", "schema", "--apply"],
         check=True,
     )
 
