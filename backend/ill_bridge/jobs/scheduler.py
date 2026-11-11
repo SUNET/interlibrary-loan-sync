@@ -4,7 +4,6 @@ import random
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from faker import Faker
 
 from ill_bridge.jobs.tasks import (
     dispatch_effects_task,
@@ -13,11 +12,6 @@ from ill_bridge.jobs.tasks import (
     send_email_test,
 )
 from ill_bridge.jobs.worker import app as procrastinate_app
-
-fake = Faker("sv_SE")
-seq = 42
-Faker.seed(seq)
-rng = random.Random(seq)
 
 
 async def enqueue_poll_libris_lending():
@@ -33,6 +27,13 @@ async def enqueue_ping():
 
 
 async def enqueue_send_email():
+    from faker import Faker
+
+    fake = Faker("sv_SE")
+    seq = 42
+    Faker.seed(seq)
+    rng = random.Random(seq)
+
     # Generate values at execution time (not at schedule-definition time)
     await send_email_test.defer_async(
         to=fake.email(),
