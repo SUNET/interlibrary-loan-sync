@@ -36,7 +36,7 @@ services:
       interval: 5s
 
   migrate:
-    image: ghcr.io/sunet/ill-bridge-backend:0.2.6
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.7
     container_name: ill-migrate
     logging: *default-logging
     command: python -m ill_bridge.jobs.migrate
@@ -91,7 +91,7 @@ services:
         condition: service_healthy
 
   api:
-    image: ghcr.io/sunet/ill-bridge-backend:0.2.6
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.7
     container_name: ill-api
     logging: *default-logging
     command: uvicorn --factory ill_bridge.api.main:create_app --host 0.0.0.0 --port 8000
@@ -107,7 +107,7 @@ services:
         condition: service_completed_successfully
 
   admin-ui:
-    image: ghcr.io/sunet/ill-bridge-ui:0.2.6
+    image: ghcr.io/sunet/ill-bridge-ui:0.2.7
     container_name: ill-admin-ui
     logging: *default-logging
     environment:
@@ -123,7 +123,7 @@ services:
         condition: service_started
 
   procrastinate-tasks:
-    image: ghcr.io/sunet/ill-bridge-backend:0.2.6
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.7
     container_name: ill-procrastinate-tasks
     logging: *default-logging
     command: >
@@ -138,7 +138,7 @@ services:
         condition: service_completed_successfully
 
   scheduler:
-    image: ghcr.io/sunet/ill-bridge-backend:0.2.6
+    image: ghcr.io/sunet/ill-bridge-backend:0.2.7
     container_name: ill-scheduler
     logging: *default-logging
     command: python -m ill_bridge.jobs.scheduler
@@ -149,7 +149,7 @@ services:
 
   # Handled via Procrastinate (scheduler + procrastinate-tasks)
   # effect-dispatcher:
-  #   image: ghcr.io/sunet/ill-bridge-backend:0.2.6
+  #   image: ghcr.io/sunet/ill-bridge-backend:0.2.7
   #   logging: *default-logging
   #   command: python -m ill_bridge.jobs.dispatch_effects
   #   environment: *backend_env

@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 from ill_bridge.common.enums import ILLDirection
 from ill_bridge.common.models import (
+    LibraryInformation,
     ProviderCapabilities,
     ProviderRequestObservation,
     ProviderRequests,
@@ -27,6 +28,9 @@ class IllProvider(Protocol):
         pass
 
     async def fetch_requests(self, *, feed: str) -> ProviderRequests:
+        pass
+
+    async def library_info(self, library_code: str) -> LibraryInformation:
         pass
 
     def normalize(

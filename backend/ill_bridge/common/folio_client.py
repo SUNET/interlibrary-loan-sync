@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx2
 from ill_bridge.common.models import (
+    LibraryInformation,
     ProviderRequestObservation,
     ReceivingLibrary,
 )
@@ -256,6 +257,37 @@ async def api_get(
     return data
 
 
+async def get_address_types(client: FolioApiClient) -> list[dict]:
+    """Retrieve FOLIO address types."""
+    response = await client.get(
+        "addresstypes",
+        params={
+            "limit": 2000,
+        },
+    )
+    response.raise_for_status()
+    address_types = response.json().get("addressTypes", [])
+    if not address_types:
+        raise ValueError("FOLIO address types not found")
+    return address_types
+
+# https://api.bth-test.bibliotek.sunet.se/addresstypes?query=cql.allRecords=1 sortby addressType&limit=2000
+async def get_address_type_id(client: FolioApiClient, address_type: str) -> str:
+    """Retrieve the ID of a FOLIO address type by name."""
+    response = await client.get(
+        "addresstypes",
+        params={
+            "query": f'addressType=="{address_type}"',
+            "limit": 2000,
+        },
+    )
+    response.raise_for_status()
+    address_types = response.json().get("addressTypes", [])
+    if not address_types:
+        return None
+    return address_types[0]["id"]
+
+
 async def get_folio_patron_group(
     client: FolioApiClient, group_name: str
 ) -> dict | None:
@@ -268,7 +300,7 @@ async def get_folio_patron_group(
         },
     )
     response.raise_for_status()
-    user_groups = (await response.json()).get("usergroups", [])
+    user_groups = response.json().get("usergroups", [])
     patron_group = next(
         (group for group in user_groups if group.get("group") == group_name),
         None,
@@ -282,8 +314,10 @@ async def get_folio_patron_group(
 
 async def create_folio_requesting_library(
     client: FolioApiClient,
-    receiving_library: ReceivingLibrary,
+    receiving_library: ReceivingLibrary | LibraryInformation,
     patron_group_id: str,
+    *,
+    address_type_id: str | None = None,
 ) -> dict:
     """Create a FOLIO requesting library unless it already exists."""
     username = receiving_library.library_code
@@ -308,13 +342,43 @@ async def create_folio_requesting_library(
         )
         return response
 
+    email = (
+        receiving_library.email_general
+        if isinstance(receiving_library, LibraryInformation)
+        else (receiving_library.email or "")
+    )
+    phone = (
+        receiving_library.phone
+        if isinstance(receiving_library, LibraryInformation)
+        else ""
+    )
+    country_code = (
+        receiving_library.country_code.upper()
+        if isinstance(receiving_library, LibraryInformation)
+        and receiving_library.country_code
+        else ""
+    )
+
+    personal: dict[str, Any] = {
+        "preferredContactTypeId": "002",
+        "phone": phone,
+        "email": email,
+        "lastName": receiving_library.name or "",
+    }
+    if address_type_id is not None:
+        personal["addresses"] = [
+            {
+                "addressLine1": receiving_library.address1 or "",
+                "city": receiving_library.city or "",
+                "postalCode": receiving_library.zip_code or "",
+                "addressTypeId": address_type_id,
+                "countryId": country_code,
+            }
+        ]
+
     payload = {
         "active": True,
-        "personal": {
-            "preferredContactTypeId": "002",
-            "lastName": receiving_library.name or "",
-            "email": receiving_library.email or "",
-        },
+        "personal": personal,
         "username": receiving_library.library_code,
         "type": "",
         "preferredEmailCommunication": [],

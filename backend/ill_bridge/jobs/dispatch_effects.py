@@ -46,9 +46,11 @@ from ill_bridge.common.enums import EffectQueueRow, IllSubjectType, Outcome
 from ill_bridge.common.folio_client import (
     FolioApiClient,
     create_folio_requesting_library,
+    get_address_type_id,
     get_folio_client,
 )
-from ill_bridge.common.models import ReceivingLibrary
+from ill_bridge.common.models import LibraryInformation, ReceivingLibrary
+from ill_bridge.common.secrets import SecretResolverPassbolt
 from ill_bridge.common.states import (
     BorrowingOrderProcessingState,
     FolioUserStatus,
@@ -59,9 +61,13 @@ from ill_bridge.database.models import (
     BorrowingOrders,
     EffectQueue,
     IllRequests,
+    Providers,
     Tenants,
 )
 from ill_bridge.database.session import make_engine, make_sessionmaker
+from ill_bridge.providers.base import IllProvider
+from ill_bridge.providers.loader import MappingLoader
+from ill_bridge.providers.registry import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +105,7 @@ class EffectContext:
     subject_type: IllSubjectType
     subject: IllRequests | BorrowingOrders
     payload: dict[str, Any]
+    provider: IllProvider | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -281,16 +288,31 @@ async def add_requesting_library(ctx: EffectContext) -> EffectOutcome:
             detail=f"no patron group configured for {ctx.tenant.folio_tenant_key}",
         )
 
+    receiving_library = ReceivingLibrary(**data)
+    folio_client = _folio(ctx.tenant.folio_tenant_key)
+
     try:
+        library_target: ReceivingLibrary | LibraryInformation = receiving_library
+        if ctx.provider is not None:
+            library_target = await ctx.provider.library_info(
+                receiving_library.library_code
+            )
+
+        address_type_id = await get_address_type_id(
+            folio_client, "Postadress"
+        ) or await get_address_type_id(folio_client, "postal_address")
+
         logger.info(
-            "creating FOLIO requesting library for tenant %s: %s",
+            "creating FOLIO requesting library for tenant %s: %s (address_type_id=%s)",
             ctx.tenant.id,
-            data,
+            library_target,
+            address_type_id,
         )
         result = await create_folio_requesting_library(
-            client=_folio(ctx.tenant.folio_tenant_key),
-            receiving_library=ReceivingLibrary(**data),
+            client=folio_client,
+            receiving_library=library_target,
             patron_group_id=patron_group.uuid,
+            address_type_id=address_type_id,
         )
     except (httpx2.HTTPStatusError, httpx2.RequestError) as exc:
         return _outcome_from_http_error(exc, idempotent=True)
@@ -472,11 +494,20 @@ async def _execute_one(
             )
         return
 
+    provider: IllProvider | None = None
     match effect_row.subject_type:
         case IllSubjectType.BORROWING_ORDER:
             subject = await session.get(BorrowingOrders, effect_row.subject_id)
         case IllSubjectType.ILL_REQUEST:
             subject = await session.get(IllRequests, effect_row.subject_id)
+            if subject is not None:
+                provider_row = await session.get(Providers, subject.provider_id)
+                if provider_row is not None:
+                    registry = ProviderRegistry(
+                        secret_resolver=SecretResolverPassbolt,
+                        mapping_loader=MappingLoader,
+                    )
+                    provider = registry.create(provider_row)
         case _:
             await _finish(
                 session,
@@ -497,6 +528,7 @@ async def _execute_one(
         subject_type=effect_row.subject_type,
         subject=subject,
         payload=effect_row.payload,
+        provider=provider,
     )
     try:
         result = await handler(ctx)
@@ -573,9 +605,9 @@ async def dispatch_effects(sessionmaker) -> int:
         f"Dispatching effects for tenants: {[tenant.id for tenant in tenants]}"
     )  # Debugging line
     # TODO: remove after implementatiion use tenants from line 430
-    default_tenant = filter(lambda t: t.folio_tenant_key == "bth", tenants)
+    # default_tenant = filter(lambda t: t.folio_tenant_key == "bth", tenants)
     # print(f"Default tenant: {list(default_tenant)}")  # Debugging line
-    tenants = list(default_tenant)
+    # tenants = list(default_tenant)
     print("tenants:", tenants)
     for tenant in tenants:
         print("for-log: Dispatching effects for tenant:", tenant.id)  # Debugging line

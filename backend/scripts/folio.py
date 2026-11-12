@@ -14,6 +14,8 @@ Usage:
     ❯ dotenvx run -f /home/benedith/github/library_project/.env -- uv run python scripts/folio.py tosql --prefix MDU --lib-code BMDE --uuid-from-folio --save-to-file
     ❯ dotenvx run -f /home/benedith/github/library_project/.env -- uv run python scripts/folio.py tosql --prefix BTH --lib-code Bthg --uuid-from-folio --save-to-file
 
+- uv run python scripts/folio.py get address-types --prefix BTH
+- uv run python scripts/folio.py get address-type-id --prefix BTH --name Postadress
 
 Environment variables for each prefix:
     TENANT_ENVIRONMENT_<PREFIX>
@@ -35,7 +37,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from ill_bridge.common.folio_client import FolioApiClient
+from ill_bridge.common.folio_client import (
+    FolioApiClient,
+    get_address_type_id,
+    get_address_types,
+    get_folio_client,
+    get_folio_patron_group,
+)
 
 
 DEFAULT_PREFIXES = ("MDU", "BTH", "HH")
@@ -44,6 +52,11 @@ DEFAULT_PREFIXES = ("MDU", "BTH", "HH")
 USAGE_EXAMPLES = """Examples:
   uv run python scripts/folio.py get tenant --prefix BTH --code BTH-INST
   uv run python scripts/folio.py get library --prefix BTH --code Bthg
+  uv run python scripts/folio.py get users --prefix BTH --patron-group Bibliotek
+  uv run python scripts/folio.py delete users --prefix BTH --patron-group Bibliotek
+  uv run python scripts/folio.py get address-types --prefix BTH
+  uv run python scripts/folio.py get address-type-id --prefix BTH --name Work
+  uv run python scripts/folio.py address-types MDU BTH HH
   uv run python scripts/folio.py tosql --prefix BTH --lib-code Bthg --uuid-from-folio
   uv run python scripts/folio.py tosql --prefix BTH --lib-code Bthg --save-to-file
   uv run python scripts/folio.py patron-groups MDU BTH HH
@@ -178,28 +191,26 @@ VALUES (
 
 def create_client_for_prefix(prefix: str) -> FolioApiClient:
     normalized_prefix = prefix.upper()
-    tenant_env = os.getenv(f"TENANT_ENVIRONMENT_{normalized_prefix}", "test")
-    tenant = os.getenv(f"TENANT_{normalized_prefix}", "diku")
     username = os.getenv(f"FOLIO_USERNAME_{normalized_prefix}")
     secret = os.getenv(f"FOLIO_SECRET_{normalized_prefix}")
 
-    if not username:
-        raise RuntimeError(f"Missing FOLIO_USERNAME_{normalized_prefix}")
-    if not secret:
-        raise RuntimeError(f"Missing FOLIO_SECRET_{normalized_prefix}")
+    if username and secret:
+        tenant_env = os.getenv(f"TENANT_ENVIRONMENT_{normalized_prefix}", "test")
+        tenant = os.getenv(f"TENANT_{normalized_prefix}", "diku")
+        return FolioApiClient(
+            username=username,
+            secret=secret,
+            auth_base_url=(
+                f"https://auth.{normalized_prefix.lower()}-{tenant_env}.bibliotek.sunet.se"
+            ),
+            api_base_url=(
+                f"https://api.{normalized_prefix.lower()}-{tenant_env}.bibliotek.sunet.se"
+            ),
+            realm=tenant,
+            tenant=tenant,
+        )
 
-    return FolioApiClient(
-        username=username,
-        secret=secret,
-        auth_base_url=(
-            f"https://auth.{normalized_prefix.lower()}-{tenant_env}.bibliotek.sunet.se"
-        ),
-        api_base_url=(
-            f"https://api.{normalized_prefix.lower()}-{tenant_env}.bibliotek.sunet.se"
-        ),
-        realm=tenant,
-        tenant=tenant,
-    )
+    return get_folio_client(normalized_prefix.lower())
 
 
 async def get_patron_groups(client: FolioApiClient) -> list[dict[str, Any]]:
@@ -209,6 +220,52 @@ async def get_patron_groups(client: FolioApiClient) -> list[dict[str, Any]]:
     )
     response.raise_for_status()
     return response.json().get("usergroups", [])
+
+
+async def get_users_by_patron_group(
+    client: FolioApiClient, patron_group_name: str
+) -> list[dict[str, Any]]:
+    """Retrieve FOLIO users belonging to the given patron group name."""
+    patron_group = await get_folio_patron_group(client, patron_group_name)
+    patron_group_id = patron_group["id"] if patron_group else None
+    if not patron_group_id:
+        raise ValueError(f"FOLIO patron group '{patron_group_name}' not found")
+
+    response = await client.get(
+        "users",
+        params={
+            "query": f'patronGroup=="{patron_group_id}"',
+            "limit": 2000,
+        },
+    )
+    response.raise_for_status()
+    users = response.json().get("users", [])
+    print(f"Found {len(users)} users in patron group '{patron_group_name}'")
+    return users
+
+
+async def delete_users_by_patron_group(
+    client: FolioApiClient, patron_group_name: str
+) -> list[dict[str, Any]]:
+    """Delete FOLIO users belonging to the given patron group name."""
+    users = await get_users_by_patron_group(client, patron_group_name)
+    deleted: list[dict[str, Any]] = []
+    for user in users:
+        print("USEr to delete:", user)
+        user_id = user.get("id")
+        if not user_id:
+            continue
+        response = await client.delete(f"users-keycloak/users/{user_id}")
+        response.raise_for_status()
+        deleted.append(
+            {
+                "id": user_id,
+                "username": user.get("username"),
+                "status_code": response.status_code,
+            }
+        )
+    print(f"Deleted {len(deleted)} users from patron group '{patron_group_name}'")
+    return deleted
 
 
 async def print_patron_groups_for_prefixes(prefixes: Sequence[str]) -> None:
@@ -230,6 +287,27 @@ async def print_patron_groups_for_prefixes(prefixes: Sequence[str]) -> None:
 
         for patron_group in patron_groups:
             print(json.dumps(patron_group, indent=2, ensure_ascii=False))
+
+
+async def print_address_types_for_prefixes(prefixes: Sequence[str]) -> None:
+    """Print FOLIO address types for each tenant prefix."""
+    for prefix in prefixes:
+        normalized_prefix = prefix.upper()
+        print(f"\n{normalized_prefix} address types:")
+
+        try:
+            async with create_client_for_prefix(normalized_prefix) as client:
+                address_types = await get_address_types(client)
+        except Exception as exc:
+            print(f"  Failed to retrieve address types: {exc}")
+            continue
+
+        if not address_types:
+            print("  No address types found")
+            continue
+
+        for address_type in address_types:
+            print(json.dumps(address_type, indent=2, ensure_ascii=False))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -258,6 +336,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tenant prefix to connect to, for example BTH, MDU, or HH",
     )
     library_parser.add_argument("--code", required=True, help="FOLIO library code")
+
+    addr_types_get_parser = resources.add_parser(
+        "address-types", help="Get all FOLIO address types for a tenant"
+    )
+    addr_types_get_parser.add_argument(
+        "--prefix",
+        required=True,
+        help="Tenant prefix to connect to, for example BTH, MDU, or HH",
+    )
+
+    addr_type_id_parser = resources.add_parser(
+        "address-type-id", help="Get the ID of a FOLIO address type by name"
+    )
+    addr_type_id_parser.add_argument(
+        "--prefix",
+        required=True,
+        help="Tenant prefix to connect to, for example BTH, MDU, or HH",
+    )
+    addr_type_id_parser.add_argument(
+        "--name", required=True, help="FOLIO address type name (e.g. Work, Home)"
+    )
+
+    users_parser = resources.add_parser(
+        "users", help="Get FOLIO users by patron group name"
+    )
+    users_parser.add_argument(
+        "--prefix",
+        required=True,
+        help="Tenant prefix to connect to, for example BTH, MDU, or HH",
+    )
+    users_parser.add_argument(
+        "--patron-group",
+        required=True,
+        help="FOLIO patron group name (e.g. Bibliotek, Andra bibliotek)",
+    )
+
+    delete_parser = commands.add_parser("delete", help="Delete FOLIO resources")
+    delete_resources = delete_parser.add_subparsers(dest="resource", required=True)
+
+    delete_users_parser = delete_resources.add_parser(
+        "users", help="Delete FOLIO users by patron group name"
+    )
+    delete_users_parser.add_argument(
+        "--prefix",
+        required=True,
+        help="Tenant prefix to connect to, for example BTH, MDU, or HH",
+    )
+    delete_users_parser.add_argument(
+        "--patron-group",
+        required=True,
+        help="FOLIO patron group name (e.g. Bibliotek, Andra bibliotek)",
+    )
 
     sql_parser = commands.add_parser("tosql", help="Generate tenant provider seed SQL")
     sql_parser.add_argument(
@@ -290,6 +420,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_PREFIXES,
         help="Tenant prefixes to check, for example MDU BTH HH",
     )
+
+    address_types_parser = commands.add_parser(
+        "address-types",
+        help="Print FOLIO address types for tenant prefixes",
+    )
+    address_types_parser.add_argument(
+        "prefixes",
+        nargs="*",
+        default=DEFAULT_PREFIXES,
+        help="Tenant prefixes to check, for example MDU BTH HH",
+    )
     return parser
 
 
@@ -297,14 +438,29 @@ async def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.command == "patron-groups":
         await print_patron_groups_for_prefixes(args.prefixes)
         return 0
+    if args.command == "address-types":
+        await print_address_types_for_prefixes(args.prefixes)
+        return 0
 
     async with create_client_for_prefix(args.prefix) as client:
         if args.command == "get" and args.resource == "tenant":
-            result = await get_tenant(client, args.code)
+            result: Any = await get_tenant(client, args.code)
             label = "Institution"
         elif args.command == "get" and args.resource == "library":
             result = await get_library(client, args.code)
             label = "Library"
+        elif args.command == "get" and args.resource == "address-types":
+            result = await get_address_types(client)
+            label = "Address types"
+        elif args.command == "get" and args.resource == "address-type-id":
+            result = await get_address_type_id(client, args.name)
+            label = "Address type ID"
+        elif args.command == "get" and args.resource == "users":
+            result = await get_users_by_patron_group(client, args.patron_group)
+            label = "Users"
+        elif args.command == "delete" and args.resource == "users":
+            result = await delete_users_by_patron_group(client, args.patron_group)
+            label = "Deleted users"
         else:
             tenant = await get_tenant(client, args.tenant_code)
             if tenant is None:

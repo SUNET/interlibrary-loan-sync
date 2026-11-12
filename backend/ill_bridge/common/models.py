@@ -27,6 +27,27 @@ class FolioPatronGroup:
 
 
 @dataclass(frozen=True, slots=True)
+class LibraryInformation:
+    library_code: str
+    name: str
+    department: str
+    postal_address: str # combined postal address, e.g. "Box 93, 231 22 Trelleborg" "{address1}, {zip_code} {city}"
+    address1: str
+    address2: str
+    address3: str
+    zip_code: str
+    city: str
+    country: str
+    country_code: str
+    phone: str
+    email_general: str
+    email_requests: str
+    email_replies: str
+    contact_person: str
+    email_contact_person: str
+    phone_contact_person: str
+
+@dataclass(frozen=True, slots=True)
 class ProviderRequests:
     feed: str
     count: int
